@@ -635,11 +635,12 @@ SimulationView is the ACTIVE view (the Preview stage click).
   verdict recorded as the expected red) and the z10/z11/z15 proof
   trio (the refused press and the overlay refusal).
 - **The capture gate — macOS legs run without pictures (2026-09-24).**
-  A CI mac has no GPU, and OpenGL in a macOS guest is software by
-  construction (Apple's paravirtual GPU is Metal-only), so Cura lands
-  on the renderer its own probe declines on macOS
-  (`UM/View/GL/OpenGLContext.py`, CURA-6092). On that renderer the
-  window stops presenting partway through a leg. Measured on
+  The CI mac reports Apple Software Renderer. Cura's autodetection
+  declines that renderer's modern context on macOS
+  (`UM/View/GL/OpenGLContext.py`, CURA-6092) and selects OpenGL 2.1.
+  This policy is verified; it does not establish the cause of the
+  presentation fault. The native main window stops updating its
+  desktop pixels partway through a leg. Measured on
   `gate-group-connection-macos-latest`: the stills go byte-identical
   while the menu bar clock and the dock keep ticking in the same
   frames, and `a9-07` — a real click on Cura's own MonitorStage
@@ -665,6 +666,25 @@ SimulationView is the ACTIVE view (the Preview stage click).
   the preview card, the readouts' contrast) run offscreen on Linux,
   where rendering is deterministic, and a CI mac was never where they
   lived.
+- **Native presentation diagnosis (2026-09-27).** Explicit diagnostic runs
+  compare desktop captures with the main window's internal Qt grab. The
+  latter shows Monitor while the desktop still shows Prepare, despite
+  increasing frameSwapped counts. Recording off reproduces this too.
+  A separate native Qt window in the same Cura process presents red then
+  blue with ordinary window flags, at small and large sizes, on the same
+  Apple software OpenGL backend. Removing Cura's external GL callback
+  after the fault does not repair it. Resizing the main window to
+  1200×800 does repair presentation, and restoring its requested dimensions
+  leaves Monitor and the webcam updating in both capture modes. Cocoa may
+  constrain the restored height to the available desktop; a large control
+  is therefore not an exact content-size match. The full pre-scenario
+  recovery experiment remains diagnostic, not a replacement for a gate.
+  Cura explicitly sets QSG_RENDER_LOOP=basic during application startup;
+  setting threaded in the launch environment does not test a threaded
+  Cura render loop. These observations narrow the fault to main-window
+  presentation/lifecycle, but do not categorically identify its root cause.
+  Normal macOS gates still disable pictures. frameSwapped and QML-tree
+  success are not evidence that WindowServer presented the right pixels.
 - **The renderer-liveness verdict rides the leg, not the platform
   (2026-09-25, the visual heartbeat).** Every step assertion is
   answered from the QML tree, and a tree keeps answering after the

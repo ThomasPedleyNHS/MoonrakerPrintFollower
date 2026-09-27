@@ -3072,7 +3072,9 @@ class PlateCanvasHitTests(RealEngineTestCase):
         # Observe the off-point event before submitting the target. Otherwise
         # an old target coordinate can satisfy the waiter while the off-point
         # signal still owns hoveredName; queued native moves then race it.
-        delivered_move(canvas.mapToScene(QPointF(scene_x + 8.0, scene_y + 8.0)).toPoint())
+        off_x = scene_x + (8.0 if scene_x + 8.0 < canvas.width() - 1 else -8.0)
+        off_y = scene_y + (8.0 if scene_y + 8.0 < canvas.height() - 1 else -8.0)
+        delivered_move(canvas.mapToScene(QPointF(off_x, off_y)).toPoint())
         delivered_move(canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint())
         return face.property("hoveredName")
 

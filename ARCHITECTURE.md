@@ -680,7 +680,12 @@ compatibility, multi-printer interaction and large-file responsiveness. The arch
 removes the known shared-object migration debt; it cannot guarantee that future Cura
 or Moonraker API changes will never require deliberate boundary changes.
 
-### Live plate camera gestures
+### Software fallback: live plate camera gestures
+
+The following raster, Canvas and prefix delivery contracts describe the
+Diagnostics software fallback. The default GPU renderer retains geometry and
+updates transforms, widths and progress through scene-graph state, as described
+below; it does not request these raster or prefix producers.
 
 The 4x warm raster is an entry-latched presentation buffer. Camera interaction
 may defer new warm composites, but NEVER suppresses live split, layer, exact
@@ -861,8 +866,9 @@ the attached toolhead when zoomed; manual panning switches it off, zooming does 
 Cold preparation stores immutable coordinate triples and polylines. Unlike nested
 coordinate lists, CPython can remove these acyclic tuples from its cyclic-GC
 traversal, avoiding long interpreter-wide pauses as the prepared cache grows.
-Qt converts the tuples to the same QML arrays and the prepared-file wire format
-is unchanged. No process-wide GC policy is changed.
+Qt converts the tuples to the same QML arrays; this representation change alone
+does not alter the binary coordinate layout. The current cache versions are
+documented below. No process-wide GC policy is changed.
 Prepared-file decoding uses immutable triples for GPU consumers too, with
 1,024-point cancellation checkpoints. Software decoding retains the original
 list shape, and software QML conversion is memoised per layer wrapper. GPU
