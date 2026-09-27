@@ -1269,10 +1269,11 @@ Component {
                                     id: tooltipHover1
                                 }
                                 UM.ToolTip {
+                                    parent: consoleResizeHandle
                                     visible: tooltipHover1.hovered
-                                    targetPoint: Qt.point(parent.width / 2, 0)
-                                    x: 0
-                                    y: parent.height + UM.Theme.getSize("default_margin").height
+                                    targetPoint: Qt.point(consoleResizeHandle.width / 2, consoleResizeHandle.height / 2)
+                                    x: (consoleResizeHandle.width - width) / 2
+                                    y: consoleResizeHandle.height + UM.Theme.getSize("default_margin").height
                                     width: UM.Theme.getSize("tooltip").width
                                     text: "Drag to resize the console."
                                 }
@@ -3194,8 +3195,8 @@ Component {
                     if (root.printer != null) {
                         var total = root.printer.plateLayerMotionCount;
                         var selected = layerProgressSlider.selectedValue();
-                        if (total >= 1000)
-                            selected = Math.round(Math.round(selected / total * 1000) * total / 1000);
+                        if (total >= 10000)
+                            selected = Math.round(Math.round(selected / total * 10000) * total / 10000);
                         root.printer.setFollowerLayerProgress(selected);
                     }
                 }
@@ -3283,9 +3284,12 @@ Component {
                         // detached (the live request).
                         showBase: root.printer != null ? root.printer.followerShowBase : true
                         showTravels: root.printer != null ? root.printer.followerShowTravels : false
+                        showRetractions: root.printer != null ? root.printer.followerShowRetractions : false
+                        showUnretractions: root.printer != null ? root.printer.followerShowUnretractions : false
                         motionSmoothing: root.printer != null ? root.printer.followerMotionSmoothing : false
                         smoothToolpaths: root.printer != null ? root.printer.followerAntialiasing : false
                         softwareRendering: root.printer != null ? root.printer.followerSoftwareRendering : false
+                        trueThickness: root.printer != null && root.printer.followerTrueThickness
                         pixelLineWidth: true
                         keepCentred: root.printer != null && root.printer.followerKeepCentred === true
                         lineScale: root.printer != null ? root.printer.followerLineScale : 1.0
@@ -3311,52 +3315,78 @@ Component {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: UM.Theme.getSize("narrow_margin").height
-                        Flow {
+                        ColumnLayout {
                             Layout.fillWidth: true
                             spacing: UM.Theme.getSize("narrow_margin").height
-                            UM.CheckBox {
-                                text: "Previous layer"
-                                checked: root.printer != null ? root.printer.followerShowPrevious : true
-                                onToggled: {
-                                    if (root.printer != null) {
-                                        root.printer.setFollowerShowPrevious(checked);
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: UM.Theme.getSize("narrow_margin").height
+                                UM.CheckBox {
+                                    text: "True thickness"
+                                    checked: root.printer != null && root.printer.followerTrueThickness
+                                    onToggled: if (root.printer != null)
+                                        root.printer.setFollowerTrueThickness(checked)
+                                }
+                                UM.CheckBox {
+                                    text: "Previous layer"
+                                    checked: root.printer != null ? root.printer.followerShowPrevious : true
+                                    onToggled: {
+                                        if (root.printer != null) {
+                                            root.printer.setFollowerShowPrevious(checked);
+                                        }
+                                    }
+                                }
+                                UM.CheckBox {
+                                    text: "Next layer"
+                                    checked: root.printer != null ? root.printer.followerShowNext : true
+                                    onToggled: {
+                                        if (root.printer != null) {
+                                            root.printer.setFollowerShowNext(checked);
+                                        }
+                                    }
+                                }
+                                UM.CheckBox {
+                                    text: "Layer ghost"
+                                    checked: root.printer != null ? root.printer.followerShowBase : true
+                                    onToggled: {
+                                        if (root.printer != null) {
+                                            root.printer.setFollowerShowBase(checked);
+                                        }
                                     }
                                 }
                             }
-                            UM.CheckBox {
-                                text: "Next layer"
-                                checked: root.printer != null ? root.printer.followerShowNext : true
-                                onToggled: {
-                                    if (root.printer != null) {
-                                        root.printer.setFollowerShowNext(checked);
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: UM.Theme.getSize("narrow_margin").height
+                                UM.CheckBox {
+                                    text: "Travels"
+                                    checked: root.printer != null ? root.printer.followerShowTravels : false
+                                    onToggled: {
+                                        if (root.printer != null) {
+                                            root.printer.setFollowerShowTravels(checked);
+                                        }
                                     }
                                 }
-                            }
-                            UM.CheckBox {
-                                text: "Layer ghost"
-                                checked: root.printer != null ? root.printer.followerShowBase : true
-                                onToggled: {
-                                    if (root.printer != null) {
-                                        root.printer.setFollowerShowBase(checked);
-                                    }
+                                UM.CheckBox {
+                                    text: "Retractions"
+                                    checked: root.printer != null ? root.printer.followerShowRetractions : false
+                                    onToggled: if (root.printer != null)
+                                        root.printer.setFollowerShowRetractions(checked)
                                 }
-                            }
-                            UM.CheckBox {
-                                text: "Travels"
-                                checked: root.printer != null ? root.printer.followerShowTravels : false
-                                onToggled: {
-                                    if (root.printer != null) {
-                                        root.printer.setFollowerShowTravels(checked);
-                                    }
+                                UM.CheckBox {
+                                    text: "Unretractions"
+                                    checked: root.printer != null ? root.printer.followerShowUnretractions : false
+                                    onToggled: if (root.printer != null)
+                                        root.printer.setFollowerShowUnretractions(checked)
                                 }
-                            }
-                            UM.CheckBox {
-                                visible: progressFace.gpuRendering
-                                text: "Antialiasing"
-                                checked: root.printer != null ? root.printer.followerAntialiasing : false
-                                onToggled: {
-                                    if (root.printer != null) {
-                                        root.printer.setFollowerAntialiasing(checked);
+                                UM.CheckBox {
+                                    visible: progressFace.gpuRendering
+                                    text: "Antialiasing"
+                                    checked: root.printer != null ? root.printer.followerAntialiasing : false
+                                    onToggled: {
+                                        if (root.printer != null) {
+                                            root.printer.setFollowerAntialiasing(checked);
+                                        }
                                     }
                                 }
                             }
@@ -3504,7 +3534,7 @@ Component {
                             fixedWidthMode: true
                             width: 28 * screenScaleFactor
                             text: "−"
-                            enabled: root.printer != null && root.printer.followerLineScale > 1.0
+                            enabled: root.printer != null && (root.printer.followerTrueThickness || root.printer.followerLineScale > 1.0)
                             onClicked: {
                                 if (root.printer != null) {
                                     root.printer.setFollowerLineScale(Math.max(1.0, root.printer.followerLineScale - 1.0));
@@ -3512,7 +3542,7 @@ Component {
                             }
                         }
                         UM.Label {
-                            text: (root.printer != null ? root.printer.followerLineScale : 1.0).toFixed(0) + " px"
+                            text: root.printer != null && root.printer.followerTrueThickness ? "True" : (root.printer != null ? root.printer.followerLineScale : 1.0).toFixed(0) + " px"
                             width: 34 * screenScaleFactor
                             horizontalAlignment: Text.AlignHCenter
                         }
@@ -3521,7 +3551,7 @@ Component {
                             fixedWidthMode: true
                             width: 28 * screenScaleFactor
                             text: "+"
-                            enabled: root.printer != null && root.printer.followerLineScale < 8.0
+                            enabled: root.printer != null && (root.printer.followerTrueThickness || root.printer.followerLineScale < 8.0)
                             onClicked: {
                                 if (root.printer != null) {
                                     root.printer.setFollowerLineScale(Math.min(8.0, root.printer.followerLineScale + 1.0));
@@ -3652,7 +3682,7 @@ Component {
                             from: 0
                             to: Math.max(0, root.printer != null ? root.printer.plateLayerMotionCount : 0)
                             // One tenth of a percent, bounded by one motion.
-                            stepSize: Math.max(1, to / 1000)
+                            stepSize: Math.max(1, to / 10000)
                             enabled: root.printer != null && root.printer.plateProgressAvailable && root.printer.plateLayerMotionCount > 0
                             // The scrub commits on every drag tick — the
                             // fill tracks the thumb at frame rate (the
@@ -3689,7 +3719,7 @@ Component {
                                     return "—";
                                 }
                                 var pct = Math.max(0, split) / total * 100;
-                                return isNaN(pct) ? "—" : pct.toFixed(1) + "%";
+                                return isNaN(pct) ? "—" : pct.toFixed(2) + "%";
                             }
                         }
                     }

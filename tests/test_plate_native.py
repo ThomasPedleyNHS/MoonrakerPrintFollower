@@ -178,6 +178,22 @@ class _CancelAfter(threading.Event):
 
 @unittest.skipUnless(QT_AVAILABLE, "Qt runtime required")
 class NativeStrokeParityTests(unittest.TestCase):
+    def test_physical_width_profile_matches_full_prefix_and_retains_pixel_override(self):
+        payload = {"classes": {"SKIN": [[(1, 5, 0), (11, 5, 0), (21, 5, 1)]]},
+                   "widths": (.4, .8), "travels": [], "motions": 2}
+        plot = _plot(offsetX=0, offsetY=0, sx=10, sy=10, bedYMax=10)
+        view = _view(width=240, height=120, lineWidthPx=6, trueThickness=True)
+        full = render_layer_raster(payload, plot, view)[0]
+        prefix = render_layer_prefix(payload, plot, view, 1)
+        def ink(image, x):
+            return sum(image.pixelColor(x, y).alpha() for y in range(image.height()))
+        self.assertAlmostEqual(ink(full, 160) / ink(full, 60), 2, delta=.1)
+        self.assertEqual(ink(prefix, 60), ink(full, 60))
+        self.assertEqual(ink(prefix, 160), 0)
+        fixed = render_layer_raster(payload, plot, dict(view, trueThickness=False))[0]
+        self.assertEqual(ink(fixed, 60), ink(fixed, 160))
+
+
     def test_the_device_backing_scales_everything_equally(self):
         # D: the bounded device-pixel backing multiplies the canvas
         # AND the stroke together — a DPR-2 render is exactly 2x the

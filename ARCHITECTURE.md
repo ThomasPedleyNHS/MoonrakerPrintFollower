@@ -979,3 +979,39 @@ reader and first 3D render as the dominant observed costs, not a measured
 Windows-versus-macOS explanation. The plugin defers its native layer-height
 cache requests and queued height batches until loading / slicing finishes;
 Preview motion writes already suspend during loading.
+
+
+### Extrusion widths and seam markers
+
+The follower can estimate a separate bead width for each depositing motion.
+The index retains signed E deltas as f32 values, filament diameter from slicer
+metadata (1.75 mm when absent), and layer height from the first depositing XY
+move in each layer. Modal E, units, G92 resets, compact hydration and persistent
+index restoration use the same scanner state. Preparation estimates width as
+filament volume divided by XY path length and layer height; arcs use their
+subdivided path length rather than the endpoint chord. This is a rectangular
+cross-section estimate, not a measurement of the printed bead. Missing or
+implausible estimates use a 0.4 mm nominal width. Different tool diameters,
+volumetric extrusion and live printer flow overrides are not inferred.
+
+The packed GPU vertex remains 32 bytes. The signed end-corner X magnitude
+carries millimetre width; its sign identifies the start/end corner. Pixel mode
+uses that sign alone. True-thickness mode scales the magnitude through a
+material uniform, so mode changes and zoom do not repack or upload geometry.
+The saved 1–8 px override remains independent and an explicit width interaction
+returns to it. Travels and the grid retain their existing widths. The software
+fallback paints per-motion widths through its existing raster and Canvas paths.
+Index version 12 and prepared-store version 4 invalidate older cache files.
+
+Retraction events are separate from travel boundaries: negative E or firmware
+G10 retracts; a subsequent positive E or G11 unretracts. G92 never creates a
+seam event. Independent persisted toggles show small hollow up/down arrows on
+the current layer. Their screen footprint is 4 px at fit, bounded at 8 px when
+zoomed, or 3 px in the mini pane. World-aligned screen cells retain at most one
+of each kind per 12 px cell so dense seams do not obscure the full-bed view.
+Neither marker size nor thinning changes with toolpath width.
+Glyphs reveal only completed event prefixes, following the eased displayed
+motion in GPU mode and withdrawing when scrubbing backwards. The glyph cache
+uses event counts rather than fractional progress, so smoothing within one
+motion does not rebuild marker geometry. Firmware events after the last indexed
+motion are included at full playback.

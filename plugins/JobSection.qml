@@ -251,7 +251,7 @@ ColumnLayout {
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
-                text: root.printerModel != null && root.printerModel.actionStatus.length > 0 ? root.printerModel.actionStatus : "—"
+                text: root.printerModel != null && root.printerModel.actionStatus.length > 0 ? root.printerModel.actionStatus + (root.printerModel.actionTimestamp.length > 0 ? " · " + root.printerModel.actionTimestamp : "") : "—"
                 Layout.fillWidth: true
                 // A live value in the status stack must never wrap:
                 // a per-poll wrap flip reflows the column (the
@@ -439,12 +439,8 @@ ColumnLayout {
             // restarts when the bar resizes so its
             // captured endpoints stay current.
             RowLayout {
-                // NO-REFLOW RULE: the Improve-ETA
-                // progress row reserves its space at
-                // all times (opacity, never
-                // visibility) — its automatic
-                // disappearance on completion used to
-                // shift the rows beneath it.
+                // This optional status row collapses when idle.
+                visible: root.printerModel != null && root.printerModel.improvingEta
                 Layout.fillWidth: true
                 Layout.columnSpan: 2
                 Layout.topMargin: UM.Theme.getSize("narrow_margin").height
@@ -529,22 +525,17 @@ ColumnLayout {
             }
 
             // The next scheduled pause's ETA (the live ruling):
-            // countdown and deadline, under Finish — the row hides
-            // whole while no pause lies ahead.
-            // NO-REFLOW RULE (the M117 slot's precedent): the row is
-            // a PERMANENT slot — flipping its visibility reflowed
-            // the section stack and fed a layout polish loop (the
-            // live report, the pause's clear/re-add cycle). The
-            // labels read empty while no pause lies ahead.
+            // countdown and deadline, under Finish. Keep its caption
+            // visible and use an em-dash when no pause lies ahead.
             UM.Label {
-                text: root.printerModel != null && root.printerModel.nextPauseEta.length > 0 ? "Next pause" : ""
+                text: "Next pause"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
                 // "(baked)" marks the gcode's own pauses (the live
                 // ruling) — the manual schedule reads plain.
-                text: root.printerModel != null ? (root.printerModel.nextPauseEta + (root.printerModel.nextPauseBaked ? " (baked)" : "")) : ""
+                text: root.printerModel != null && root.printerModel.nextPauseEta.length > 0 ? (root.printerModel.nextPauseEta + (root.printerModel.nextPauseBaked ? " (baked)" : "")) : "—"
                 Layout.fillWidth: true
             }
 

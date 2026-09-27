@@ -20,7 +20,7 @@ def scene(**changes):
 class NavigationSceneKeyTests(unittest.TestCase):
     def test_named_identity_retains_the_existing_tuple_contract(self):
         key = scene()
-        self.assertEqual(len(key), 16)
+        self.assertEqual(len(key), 17)
         self.assertEqual(key[3], key.split)
         self.assertEqual(key[-1], key.zoom)
         self.assertEqual(navigation_zoom(key), 1.0)

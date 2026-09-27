@@ -50,6 +50,7 @@ ColumnLayout {
                 opacity: root.printerModel != null && root.printerModel.plateObjects.objects.length > 0 ? 1 : 0
                 MouseArea {
                     anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.popOverToggleRequested("plate")
                 }
             }

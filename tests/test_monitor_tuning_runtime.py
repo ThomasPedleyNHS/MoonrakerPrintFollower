@@ -24,7 +24,9 @@ class MonitorQtTests(harness.MonitorQtTests):
         # columns are the grid's columns — a separate row read as
         # misaligned); the Dashboard's print section does not repeat it.
         self.assertIn('text: "Last action"', harness.JOB_SECTION_QML)
-        self.assertIn('root.printerModel.actionStatus.length > 0 ? root.printerModel.actionStatus : "—"', harness.JOB_SECTION_QML)
+        self.assertIn('root.printerModel.actionStatus.length > 0 ? root.printerModel.actionStatus +', harness.JOB_SECTION_QML)
+        self.assertIn('root.printerModel.actionTimestamp', harness.JOB_SECTION_QML)
+        self.assertIn(': "—"', harness.JOB_SECTION_QML)
         self.assertNotIn("visible: root.printer != null && root.printer.actionStatus.length > 0", harness.MONITOR_QML)
         self.assertLess(harness.JOB_SECTION_QML.index('text: "Last action"'), harness.JOB_SECTION_QML.index('text: "Layer"'))
         self.assertNotIn('text: "Last action"', harness.DASHBOARD_QML)

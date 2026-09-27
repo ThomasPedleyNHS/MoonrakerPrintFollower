@@ -171,6 +171,7 @@ def qml_geometry(payload):
     def segments(rows):
         return [[list(point) for point in segment] for segment in rows]
     return dict(payload,
+                **({"widths": list(payload["widths"])} if "widths" in payload else {}),
                 classes={name: segments(rows) for name, rows in
                          (payload.get("classes") or {}).items()},
                 travels=segments(payload.get("travels") or ()),
@@ -227,6 +228,11 @@ class PlateLayer(QObject):
         self._rewind_ticket = None
         self._rewind_cancel = None
         self._expected_key = None
+
+    @pyqtProperty("QVariantList", constant=True)
+    def extruderEvents(self):
+        return [list(point) + [retract] for key, retract in (("retractions", True), ("unretractions", False))
+                for point in self._payload.get(key) or ()]
 
     @pyqtProperty(int, constant=True)
     def motions(self) -> int:
@@ -494,7 +500,7 @@ _CONTEXT_STAMP = "mpf-render-context"
 # painters' own reads; a key the signature misses is a hole, so a
 # change to a painter's inputs belongs here in the same pass.
 _CONTEXT_VIEW = ("width", "height", "scale", "panX", "panY", "backing",
-                 "dpr", "zoom", "lineScale", "lineWidthPx", "compact", "nominalWidthMm",
+                 "dpr", "zoom", "lineScale", "lineWidthPx", "trueThickness", "compact", "nominalWidthMm",
                  "travelVisualRatio", "bedWidth", "bedDepth")
 _CONTEXT_FLAGS = (("showPrevious", True), ("showNext", True),
                   ("showBase", True), ("showTravels", False))
@@ -547,6 +553,25 @@ def _transform(plot: dict, view: dict):
             float(plot["bedXMin"]), float(plot["bedYMax"]))
 
 
+def _paint_physical(painter, pen, points, payload, sx, sy, ox, oy, xmin, ymax, first=0, split=-1, cancel=None):
+    widths = payload.get("widths") or ()
+    for edge, (a, b) in enumerate(zip(points, points[1:], strict=False)):
+        if edge % 512 == 0 and cancel is not None and cancel.is_set():
+            return
+        motion = int(b[2])
+        if motion < first:
+            continue
+        if split >= 0 and motion >= split:
+            break
+        mm = widths[motion] if motion < len(widths) else 0.0
+        pen.setWidthF((mm if mm > 0 else 0.4) * abs(sx))
+        painter.setPen(pen)
+        path = QPainterPath()
+        path.moveTo(ox + (a[0] - xmin) * sx, oy + (ymax - a[1]) * sy)
+        path.lineTo(ox + (b[0] - xmin) * sx, oy + (ymax - b[1]) * sy)
+        painter.drawPath(path)
+
+
 def _paint_segments(painter: QPainter, pen: QPen, payload: dict, plot: dict, view: dict,
                     class_names=None, colour=None, cancel=None) -> bool:
     """QPainterPath per segment (the measured winner: 92 ms vs
@@ -567,6 +592,9 @@ def _paint_segments(painter: QPainter, pen: QPen, payload: dict, plot: dict, vie
             if cancel is not None and cancel.is_set():
                 return False
             if len(points) < 2:
+                continue
+            if view.get("trueThickness"):
+                _paint_physical(painter, pen, points, payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, cancel=cancel)
                 continue
             path = QPainterPath()
             path.moveTo(offset_x + (points[0][0] - bed_x_min) * sx,
@@ -765,6 +793,9 @@ def _paint_below_split(painter: QPainter, pen: QPen, payload: dict, plot: dict,
                 # lower bound holds. No further back-up — earlier
                 # edges carry motions below `first`.
                 begin -= 1
+            if view.get("trueThickness"):
+                _paint_physical(painter, pen, points[begin:], payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, first=first, split=split, cancel=cancel)
+                continue
             path = QPainterPath()
             drew = False
             for i in range(begin + 1, len(points)):
@@ -793,7 +824,12 @@ def _travels_pen(pen: QPen, view: dict) -> QPen:
     the nav composite and the exact scene's travel raster can never
     disagree on the stroke."""
     tpen = QPen(pen)
-    tpen.setWidthF(max(0.01, pen.widthF()
+    if view.get("trueThickness") and view.get("lineWidthPx"):
+        width = float(view["lineWidthPx"]) * _backing_scale(view)
+        if view.get("backing"):
+            width /= max(1.0, float(view.get("zoom") or 1.0))
+        tpen.setWidthF(width)
+    tpen.setWidthF(max(0.01, tpen.widthF()
                        * float(view.get("travelVisualRatio",
                                         _PLATE_TRAVEL_VISUAL_RATIO))))
     tpen.setColor(QColor(_PLATE_TRAVEL_COLOUR))

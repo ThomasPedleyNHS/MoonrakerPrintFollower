@@ -167,7 +167,7 @@ class SourceContractTests(unittest.TestCase):
             "GpuFollower": {"GpuStrokeMaterial"},
             "GpuStrokeMaterial": set(),
             "GpuObjectPicker": {"GpuFollower"},
-            "MonitorCommands": {"MonitorPermissions"},
+            "MonitorCommands": {"MonitorPermissions", "MonitorFormatting"},
             "MonitorControls": {"MonitorFormatting", "MonitorPermissions"},
             "MonitorData": {"CameraTiming", "ConsolePolicy", "MonitorFormatting", "MonitorPermissions", "MoonrakerSession"},
             "MonitorFormatting": {"MonitorPermissions"},

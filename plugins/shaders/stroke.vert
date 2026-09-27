@@ -6,6 +6,7 @@ layout(location=3) in vec2 motion;
 layout(location=0) out vec2 localPos;
 layout(location=1) out float segmentLength;
 layout(location=2) flat out float visibleSegment;
+layout(location=3) flat out float halfWidth;
 layout(std140,binding=0) uniform buf { mat4 matrix; vec4 colour; vec4 parameters; vec4 options; } ubuf;
 void main() {
     float amount = ubuf.options.z > 0.5 ? clamp((ubuf.options.y - motion.x) / max(motion.y,0.000001),0.0,1.0) : 1.0;
@@ -18,8 +19,10 @@ void main() {
     segmentLength = length(delta);
     vec2 tangent = segmentLength > 0.0001 ? delta / segmentLength : vec2(1,0);
     vec2 normal = vec2(-tangent.y,tangent.x);
-    float radius = ubuf.parameters.x + (ubuf.parameters.w > 0.5 ? 1.0 : 0.0);
-    vec2 offset = (tangent * corner.x + normal * corner.y) * radius;
+    halfWidth = ubuf.parameters.x * (ubuf.options.w > 0.5 ? abs(corner.x) : 1.0);
+    float endSign = sign(corner.x);
+    float radius = halfWidth + (ubuf.parameters.w > 0.5 ? 1.0 : 0.0);
+    vec2 offset = (tangent * endSign + normal * corner.y) * radius;
     gl_Position = anchor + vec4(offset / ubuf.parameters.yz * anchor.w,0,0);
-    localPos = vec2((corner.x < 0 ? 0 : segmentLength) + corner.x*radius, corner.y*radius);
+    localPos = vec2((corner.x < 0 ? 0 : segmentLength) + endSign*radius, corner.y*radius);
 }

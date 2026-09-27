@@ -32,7 +32,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("default_margin").width / 2
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Firmware restart"
                 objectName: "moonrakerFirmwareRestart"
@@ -50,7 +50,7 @@ ColumnLayout {
                     text: "Restart Klipper's firmware process (FIRMWARE_RESTART)." + (root.printerModel != null && !root.printerModel.canRestart && root.printerModel.restartReasonDetail !== "" ? " " + root.printerModel.restartReasonDetail : "")
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Host restart"
                 objectName: "moonrakerHostRestart"
@@ -69,7 +69,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("default_margin").width / 2
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 // On its own row: three long labels
                 // in one row crushed each other and
                 // the text left its bounds (a live

@@ -265,7 +265,7 @@ ColumnLayout {
                     spacing: zOffsetGrid.buttonSpacing
                     Repeater {
                         model: [0.005, 0.01, 0.025, 0.05]
-                        Cura.SecondaryButton {
+                        CentredSecondaryButton {
                             Layout.fillWidth: true
                             Layout.preferredWidth: (zOffsetGrid.width - 3 * zOffsetGrid.buttonSpacing) / 4
                             height: UM.Theme.getSize("action_button").height
@@ -288,7 +288,7 @@ ColumnLayout {
                     spacing: zOffsetGrid.buttonSpacing
                     Repeater {
                         model: [-0.005, -0.01, -0.025, -0.05]
-                        Cura.SecondaryButton {
+                        CentredSecondaryButton {
                             Layout.fillWidth: true
                             Layout.preferredWidth: (zOffsetGrid.width - 3 * zOffsetGrid.buttonSpacing) / 4
                             height: UM.Theme.getSize("action_button").height
@@ -307,7 +307,7 @@ ColumnLayout {
                     }
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Clear Z offset"
                 enabled: root.printerModel != null && !root.printerModel.actionBusy && root.printerModel.sectionReason === ""

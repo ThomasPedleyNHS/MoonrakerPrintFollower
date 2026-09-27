@@ -2,6 +2,51 @@
 from tests import monitor_test_support as harness
 
 class MonitorQtTests(harness.MonitorQtTests):
+    def test_last_action_timestamp_is_event_time_not_publication_time(self):
+        from unittest.mock import patch
+        model = self.monitor()
+        commands = model._commands
+        with patch.object(commands, "_timestamp", side_effect=["10:11:12", "10:12:13"]):
+            commands.report_status("Operation cancelled")
+            model._publish()
+            self.assertEqual(model.actionStatus, "Operation cancelled")
+            self.assertEqual(model.actionTimestamp, "10:11:12")
+            model._publish()
+            self.assertEqual(model.actionTimestamp, "10:11:12")
+            commands.report_status("Operation cancelled")
+            model._publish()
+            self.assertEqual(model.actionTimestamp, "10:12:13")
+
+    def test_new_print_clears_old_action_but_resume_does_not(self):
+        model = self.monitor()
+        self.deliver_state("printing")
+        self.qt.events()
+        commands = model._commands
+        commands.report_status("Job cancelled")
+        self.deliver_state("paused")
+        self.qt.events()
+        self.deliver_state("printing")
+        self.qt.events()
+        self.assertEqual(commands.status, "Job cancelled")
+        self.deliver_state("cancelled")
+        self.qt.events()
+        self.deliver_state("printing")
+        self.qt.events()
+        self.assertEqual(commands.status, "")
+        self.assertEqual(commands.status_timestamp, "")
+
+    def test_new_print_does_not_inherit_a_late_cancel_confirmation(self):
+        model = self.monitor()
+        commands = model._commands
+        commands.observe_job(("part.gcode", 100, 1))
+        commands.send("Cancel", "printer/print/cancel")
+        commands.observe_job(("part.gcode", 100, 2))
+        self.assertTrue(commands.busy)
+        commands._command_changed({"name": "Cancel", "outcome": "confirmed",
+                                   "detail": "cancelled", "terminal": True})
+        self.assertFalse(commands.busy)
+        self.assertEqual(commands.status, "")
+
     def test_improve_eta_hourglass_survives_the_registration_gap(self):
         # The red-run catch: improveEta publishes its own flag-set,
         # and the coordinator's load_active flips only on its NEXT
@@ -693,7 +738,7 @@ class MonitorQtTests(harness.MonitorQtTests):
                 # The follower view settings are global (the live
                 # ruling) — the defaults ride the fresh document.
                 "followerView": {"showPrevious": True, "showNext": True,
-                                 "showBase": True, "showTravels": False,
+                                 "showBase": True, "showTravels": False, "showRetractions": False, "showUnretractions": False, "trueThickness": False,
                                  "antialiasing": False, "keepCentred": False, "lineScale": 1.0},
             })
             # The chart config is per-printer now: the global file must
@@ -2592,6 +2637,9 @@ Item {
             # Static renderer capability: smoothing is available only
             # in the GPU development install, independent of print state.
             "visible: progressFace.gpuRendering",
+            # The Print job status row collapses while no ETA build runs.
+            "visible: root.printerModel != null && root.printerModel.improvingEta",
+            "visible: root.printerModel != null && root.printerModel.nextPauseEta.length > 0",
             # The plate face's native raster stack (the 4.6.0 render
             # architecture): the images own their state gates — a
             # full layer's raster, its travels, the grey partial
@@ -2602,6 +2650,7 @@ Item {
             "visible: root.gpuRendering && root.available()",
             'visible: root.gpuRendering ? root.available() && !gpuFollower.ready : root._presentation.kind === "preparing" && !root._presentation.ready',
             "visible: !root.gpuRendering",
+            "visible: !root.gpuRendering && root.available() && (root.showRetractions || root.showUnretractions)",
             "visible: !root.gpuRendering && root._interactionActive",
             'visible: !root.gpuRendering && root._interactionActive && (root._gestureNavSource !== "" || navigationData() !== "")',
             "visible: jumpButton.visible",

@@ -10,6 +10,9 @@ under the workstream-4 schema.
 from __future__ import annotations
 
 SCENARIO_MAP = {
+    "MoonrakerMonitorModel.setFollowerShowRetractions": "b11",
+    "MoonrakerMonitorModel.setFollowerTrueThickness": "b11",
+    "MoonrakerMonitorModel.setFollowerShowUnretractions": "b11",
     # The QML-facing verbs on the settings machine action (the settings group).
     "MoonrakerFollowerMachineAction.cancelTest": "i2",
     "MoonrakerFollowerMachineAction.clearCache": "i6",
@@ -294,6 +297,7 @@ SCENARIO_MAP = {
 }
 
 PREFIX_RULES = [
+    ("objectName", "moonrakerExtruderMarkers", "b11"),
     # The policy projections (4.2.0) ride the motion scenarios that
     # exercise the gates: the caption pair and the restart pair.
     ("key", "jogReason", "g6"),
@@ -371,6 +375,9 @@ PREFIX_RULES = [
     ("key", "plateLayerCount", "b11"),
     ("key", "followerAttached", "b11"),
     ("key", "followerMotionSmoothing", "b11"),
+    ("key", "followerShowRetractions", "b11"),
+    ("key", "followerTrueThickness", "b11"),
+    ("key", "followerShowUnretractions", "b11"),
     ("key", "followerLayerAnchor", "b11"),
     ("key", "zOffset", "g4"),
     ("key", "homedAxes", "b8"),
@@ -407,6 +414,7 @@ PREFIX_RULES = [
     ("key", "canCancelPrint", "g6"),
     ("key", "actionBusy", "b10"),
     ("key", "actionStatus", "b10"),
+    ("key", "actionTimestamp", "b10"),
     ("key", "connectionDetail", "a9"),
     ("key", "canApplyTemperaturePreset", "c1"),
     ("key", "temperaturePresetItems", "c1"),

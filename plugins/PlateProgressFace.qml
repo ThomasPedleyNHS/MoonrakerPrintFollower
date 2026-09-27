@@ -110,6 +110,8 @@ Item {
         }
     }
     property bool smoothToolpaths: false
+    property bool showRetractions: false
+    property bool showUnretractions: false
     property bool showTravels: false  // the travel lines
     // The stroke thickness multiplier (the live request). The 0.7
     // default keeps a dense hatch (the skin's ~0.4 mm pitch)
@@ -117,6 +119,7 @@ Item {
     // (the live report: the renderer's strokes swallowed the
     // diagonals the reference renderers show).
     property bool pixelLineWidth: false
+    property bool trueThickness: false
     property real lineScale: 0.7
     // The toolpath ink's PHYSICAL width: strokes are bed-space
     // geometry, never screen pixels. The nominal is the slicer's
@@ -1324,7 +1327,7 @@ Item {
     function _viewKey() {
         var plot = mapping._plot;
         var bed = plot != null ? plot.bed : null;
-        return [root.viewScale, root.viewPanX, root.viewPanY, root.lineScale, root.compact ? 1 : 0, width, height, root.devicePixelRatio, root.toolpathWidthPx(), bed != null ? [bed.offsetX, bed.offsetY, bed.bedXMin, bed.bedYMax, plot.sx, plot.sy].join(":") : ""].join("|");
+        return [root.viewScale, root.viewPanX, root.viewPanY, root.lineScale, root.trueThickness ? 1 : 0, root.compact ? 1 : 0, width, height, root.devicePixelRatio, root.toolpathWidthPx(), bed != null ? [bed.offsetX, bed.offsetY, bed.bedXMin, bed.bedYMax, plot.sx, plot.sy].join(":") : ""].join("|");
     }
 
     function _motionsOf(layer) {
@@ -1603,6 +1606,11 @@ Item {
             _requestProgressPaint();
         }
     }
+    onTrueThicknessChanged: {
+        _publishView();
+        _retireRetainedView();
+        root.settleTimer.restart();
+    }
     onLineScaleChanged: {
         _publishView();
         _retireRetainedView();
@@ -1719,6 +1727,8 @@ Item {
                 plot: mapping._plot,
                 split: root.progress != null && root.progress.split != null ? Number(root.progress.split) + (root.motionSmoothing && root.attached ? Number(root.progress.partial || 0) : 0) : null,
                 displaySplit: root.motionSmoothing && root.attached ? root.displayedMotion : (root.progress != null ? root.progress.split : null),
+                motionCount: root.progress != null && root.progress.layers != null && root.progress.layers.current != null ? root.progress.layers.current.motions : 0,
+                markerSplit: root.progress != null && root.progress.split != null ? (root.motionSmoothing && root.attached ? root.displayedMotion : root.progress.split) : (root.attached ? 0 : null),
                 scale: root._dotScale,
                 panX: root._dotPanX,
                 panY: root._dotPanY,
@@ -1726,13 +1736,79 @@ Item {
                 gridThin: UM.Theme.getColor("lining"),
                 gridMajor: UM.Theme.getColor("border"),
                 lineWidth: root.toolpathWidthPx(),
+                trueThickness: root.trueThickness,
                 antialiasing: root.smoothToolpaths,
                 showBase: root.showBase,
                 showPrevious: root.showPrevious,
                 showNext: root.showNext,
                 showTravels: root.showTravels,
+                showRetractions: root.showRetractions,
+                showUnretractions: root.showUnretractions,
+                markerInk: UM.Theme.getColor("text"),
                 travelRatio: root.travelVisualRatio
             })
+    }
+
+    // A small independent overlay for the software fallback. It reads only
+    // event points, never the complete layer's toolpath QVariant.
+    Canvas {
+        id: extruderMarkers
+        objectName: "moonrakerExtruderMarkers"
+        anchors.fill: parent
+        z: 1
+        visible: !root.gpuRendering && root.available() && (root.showRetractions || root.showUnretractions)
+        property var eventLayer: root.progress != null && root.progress.layers != null ? root.progress.layers.current : null
+        property var points: visible && eventLayer != null && eventLayer.extruderEvents !== undefined ? eventLayer.extruderEvents : []
+        property var markerView: ({
+                scale: root._dotScale,
+                panX: root._dotPanX,
+                panY: root._dotPanY,
+                plot: mapping._plot,
+                up: root.showRetractions,
+                down: root.showUnretractions,
+                compact: root.compact,
+                completed: root.progress != null && root.progress.split != null ? Math.floor(root.progress.split) : (root.attached ? 0 : Infinity),
+                total: eventLayer != null ? eventLayer.motions : 0
+            })
+        onPointsChanged: requestPaint()
+        onMarkerViewChanged: requestPaint()
+        onVisibleChanged: requestPaint()
+        onPaint: {
+            var ctx = getContext("2d");
+            ctx.clearRect(0, 0, width, height);
+            var plot = markerView.plot;
+            if (!visible || plot == null)
+                return;
+            var cells = {};
+            var scale = markerView.scale;
+            var half = (markerView.compact ? 3 : Math.min(8, Math.max(4, 4 * Math.sqrt(Math.max(1, scale))))) / 2;
+            var outline = [[0, -half], [half, 0], [half * .35, 0], [half * .35, half], [-half * .35, half], [-half * .35, 0], [-half, 0], [0, -half]];
+            ctx.strokeStyle = UM.Theme.getColor("text");
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (var i = 0; i < points.length; ++i) {
+                var point = points[i];
+                var up = point[3];
+                if (!(up ? markerView.up : markerView.down))
+                    continue;
+                if (point[2] >= markerView.completed && !(markerView.total > 0 && markerView.completed >= markerView.total && point[2] === markerView.total))
+                    continue;
+                var cell = up + ":" + Math.floor(point[0] * Math.abs(plot.sx * scale) / 12) + ":" + Math.floor(point[1] * Math.abs(plot.sy * scale) / 12);
+                if (cells[cell])
+                    continue;
+                cells[cell] = true;
+                var scene = mapping.plateToScene(point[0], point[1]);
+                if (scene == null)
+                    continue;
+                var x = scene.x * scale + markerView.panX;
+                var y = scene.y * scale + markerView.panY;
+                var direction = up ? 1 : -1;
+                ctx.moveTo(x + outline[0][0], y + direction * outline[0][1]);
+                for (var j = 1; j < outline.length; ++j)
+                    ctx.lineTo(x + outline[j][0], y + direction * outline[j][1]);
+            }
+            ctx.stroke();
+        }
     }
 
     // The EXACT scene: everything below — the raster stack and the
@@ -2499,6 +2575,21 @@ Item {
                     continue;
                 }
                 var i = _firstEdge(points, from);
+                if (root.trueThickness) {
+                    var widths = layer.widths || [];
+                    while (_edgePrinted(points, i, split)) {
+                        ctx.stroke();
+                        ctx.beginPath();
+                        var mm = widths[Math.floor(points[i][2])];
+                        ctx.lineWidth = (mm > 0 ? mm : 0.4) * Math.abs(sx * scale);
+                        ctx.moveTo((offsetX + (points[i - 1][0] - bedXMin) * sx) * scale + panX, (offsetY + (bedYMax - points[i - 1][1]) * sy) * scale + panY);
+                        ctx.lineTo((offsetX + (points[i][0] - bedXMin) * sx) * scale + panX, (offsetY + (bedYMax - points[i][1]) * sy) * scale + panY);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ++i;
+                    }
+                    continue;
+                }
                 if (!_edgePrinted(points, i, split)) {
                     continue;
                 }

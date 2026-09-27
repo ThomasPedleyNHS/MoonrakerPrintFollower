@@ -81,10 +81,13 @@ ColumnLayout {
                 showNext: root.printerModel != null ? root.printerModel.followerShowNext : true
                 showBase: root.printerModel != null ? root.printerModel.followerShowBase : true
                 showTravels: root.printerModel != null ? root.printerModel.followerShowTravels : false
+                showRetractions: root.printerModel != null ? root.printerModel.followerShowRetractions : false
+                showUnretractions: root.printerModel != null ? root.printerModel.followerShowUnretractions : false
                 motionSmoothing: root.printerModel != null ? root.printerModel.followerMotionSmoothing : false
                 smoothToolpaths: root.printerModel != null ? root.printerModel.followerAntialiasing : false
                 renderSurface: "mini"
                 softwareRendering: root.printerModel != null ? root.printerModel.followerSoftwareRendering : false
+                trueThickness: root.printerModel != null && root.printerModel.followerTrueThickness
                 pixelLineWidth: true
                 lineScale: root.printerModel != null ? root.printerModel.followerLineScale : 1.0
                 // The mini is a THUMBNAIL of the live print, always:
@@ -95,6 +98,7 @@ ColumnLayout {
                 opacity: root.printerModel != null && root.printerModel.plateLiveAvailable ? 1 : 0
                 MouseArea {
                     anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.popOverToggleRequested("plateprogress")
                 }
             }

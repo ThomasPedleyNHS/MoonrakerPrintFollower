@@ -2235,8 +2235,24 @@ class PlateFaceRenderTests(RealEngineTestCase):
         # pixel of seam, which is the reported magnitude, still fails
         # here; a sub-half-pixel seam is not something this measurement
         # can see, and is not claimed to be.
+        def probe_phase(bed_x, bed_y):
+            # Rounding X and Y independently changes the phase of a diagonal
+            # at the sampled column. Compare each centroid with the path's
+            # actual intersection there, not with the rounded bed point.
+            x = float(bed["offsetX"]) + (bed_x - float(bed["bedXMin"])) * float(plot_value["sx"])
+            y = float(bed["offsetY"]) + (float(bed["bedYMax"]) - bed_y) * float(plot_value["sy"])
+            if spec["across_columns"]:
+                return x - round(x)
+            a, b = spec["points"][0], spec["points"][-1]
+            slope = -(b[1] - a[1]) * float(plot_value["sy"]) / ((b[0] - a[0]) * float(plot_value["sx"]))
+            return y + (round(x) - x) * slope - round(y)
+
         prefix_centre = centre(prefix_band)
         tail_centre = centre(tail_band)
+        if prefix_centre is not None:
+            prefix_centre -= probe_phase(*spec["prefix"])
+        if tail_centre is not None:
+            tail_centre -= probe_phase(*spec["tail"])
         self.assertIsNotNone(prefix_centre,
                              "%s: no ink at the prefix probe" % label)
         self.assertLessEqual(abs(prefix_centre - tail_centre), 0.75,
@@ -3027,8 +3043,22 @@ class PlateCanvasHitTests(RealEngineTestCase):
         QTest.mouseMove(window, canvas.mapToScene(
             QPointF(scene_x + 8.0, scene_y + 8.0)).toPoint())
         self.pump(5)
-        QTest.mouseMove(window, canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint())
-        self.pump(20)
+        target = canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint()
+        QTest.mouseMove(window, target)
+        # Native pointer events are asynchronous, especially under coverage.
+        # Wait for the MouseArea's coordinates, never for the expected object
+        # name: a wrong hit-test must still fail the caller's assertion.
+        area = next(child for child in reversed(canvas.childItems())
+                    if child.inherits("QQuickMouseArea"))
+        local = area.mapFromScene(QPointF(target))
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            self.app.processEvents()
+            if abs(float(area.property("mouseX")) - local.x()) < 1.5 and abs(float(area.property("mouseY")) - local.y()) < 1.5:
+                break
+            QTest.qWait(10)
+        self.assertLess(abs(float(area.property("mouseX")) - local.x()), 1.5, "hover X was not delivered")
+        self.assertLess(abs(float(area.property("mouseY")) - local.y()), 1.5, "hover Y was not delivered")
         return face.property("hoveredName")
 
     def _click_bed(self, window, canvas, face, bed_x, bed_y):

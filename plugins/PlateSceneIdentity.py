@@ -25,7 +25,8 @@ class NavigationSceneKey(NamedTuple):
     bed_depth: float
     plot: tuple
     dpr: float
-    zoom: float
+    true_thickness: bool = False
+    zoom: float = 1.0
 
     def without_progress(self):
         """Keep scene identity and whether a boundary was available."""
@@ -51,7 +52,7 @@ def navigation_zoom(key):
         return key
     if isinstance(key, NavigationSceneKey):
         return key.zoom
-    return key[-1]
+    return key[NavigationSceneKey._fields.index("zoom")]
 
 
 def navigation_compatible(stored, demand):

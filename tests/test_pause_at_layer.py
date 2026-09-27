@@ -307,7 +307,8 @@ class MonitorPauseBlockTests(unittest.TestCase):
         from plugins.PrintState import PhysicalLayer, PrintSnapshot
         from plugins.RemoteJobService import PrintObservation
         return PrintSnapshot(observation=PrintObservation("printing", "part.gcode", 100, 20, 12.5),
-                             layer=PhysicalLayer(index=index, total=total))
+                             layer=PhysicalLayer(index=index, total=total),
+                             index_ready=True, plate_layer_count=total)
 
     def build(self, **kwargs):
         from PyQt6.QtCore import QObject, pyqtSignal
@@ -346,6 +347,19 @@ class MonitorPauseBlockTests(unittest.TestCase):
     def publish(self, index=10, total=40):
         self.print_state = self.snapshot(index, total)
         self.model._publish()
+
+    def test_an_unindexed_print_has_no_final_layer_claim_or_schedule_action(self):
+        from plugins.PrintState import PhysicalLayer, PrintSnapshot
+        from plugins.RemoteJobService import PrintObservation
+        self.build()
+        # Moonraker knows the current/total layer before our index exists.
+        self.print_state = PrintSnapshot(
+            observation=PrintObservation("printing", "part.gcode", 100, 20, 12.5),
+            layer=PhysicalLayer(index=10, total=40))
+        self.model.setFollowerLayerAnchor(10)
+        self.model._publish()
+        self.assertFalse(self.value("pauseAtLayerCanToggle"))
+        self.assertEqual(self.value("pauseAtLayerUnavailableText"), "Print not indexed")
 
     # ---- the surface -------------------------------------------------
 

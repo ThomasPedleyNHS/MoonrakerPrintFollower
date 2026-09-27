@@ -60,7 +60,7 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("default_margin").width / 2
 
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Pause"
                 enabled: root.printerModel != null && root.printerModel.canPausePrint
@@ -78,7 +78,7 @@ ColumnLayout {
                 }
             }
 
-            Cura.PrimaryButton {
+            CentredPrimaryButton {
                 Layout.fillWidth: true
                 text: "Resume"
                 enabled: root.printerModel != null && root.printerModel.canResumePrint
@@ -93,7 +93,7 @@ ColumnLayout {
                 }
             }
 
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Cancel"
                 enabled: root.printerModel != null && root.printerModel.canCancelPrint

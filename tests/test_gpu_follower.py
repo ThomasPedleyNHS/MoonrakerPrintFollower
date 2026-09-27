@@ -12,6 +12,69 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @unittest.skipUnless(QT_AVAILABLE, "Install PyQt6 to test retained geometry")
 class RetainedGeometryTests(unittest.TestCase):
+    def test_extruder_events_follow_completed_playback_and_disappear_on_scrub_back(self):
+        from plugins.GpuFollower import GpuFollower, prepare, marker_counts, marker_geometry
+        from plugins.GpuStrokeMaterial import pack_shader
+        from PyQt6 import sip
+        from PyQt6.QtQuick import QQuickWindow
+        data = pack_shader(prepare((("current", {"motions": 3,
+            "retractions": [(0, 0, 0), (60, 0, 3)],
+            "unretractions": [(30, 0, 1)]}),)))
+        expected = ((0, 0, 0), (.99, 0, 0), (1, 1, 0), (1.99, 1, 0),
+                    (2, 1, 1), (3, 2, 1), (0, 0, 0))
+        for split, up, down in expected:
+            limits = marker_counts(data, split, 3)
+            self.assertEqual(dict(limits), {"RETRACTION": up, "UNRETRACTION": down})
+            raw = marker_geometry(data, 1, 1, 1, False, True, True, limits)
+            self.assertEqual(len(raw), (up + down) * 28 * 4)
+        window = QQuickWindow()
+        item = GpuFollower(window.contentItem())
+        item._data = data
+        settings = {"split": 3, "displaySplit": 1, "motionCount": 3,
+                    "showRetractions": True, "showUnretractions": True}
+        item.settings = settings
+        node = item.updatePaintNode(None, None)
+        original = node._marker_nodes[0]
+        item.settings = dict(settings, displaySplit=1.9)
+        item.updatePaintNode(node, None)
+        self.assertIs(node._marker_nodes[0], original,
+                      "smoothing within a motion must not rebuild glyph geometry")
+        item.settings = dict(settings, displaySplit=0)
+        item.updatePaintNode(node, None)
+        self.assertEqual(node._marker_nodes, [])
+        sip.delete(node)
+        sip.delete(window)
+
+    def test_physical_widths_share_fixed_geometry_with_pixel_override_and_zoom(self):
+        from PyQt6 import sip
+        from PyQt6.QtQuick import QQuickWindow
+        from plugins.GpuFollower import GpuFollower, prepare
+        from plugins.GpuStrokeMaterial import pack_shader, _pack_stdlib
+        payload = {"classes": {"SKIN": [[(0, 0, 0.0), (10, 0, 0.0), (20, 0, 1.0)]]}, "widths": (.4, .8)}
+        raw = prepare((("current", payload),))
+        data = pack_shader(raw)
+        self.assertEqual(data, _pack_stdlib(raw))
+        values = array("f")
+        values.frombytes(data[0][3])
+        self.assertAlmostEqual(abs(values[4]), .4)
+        self.assertAlmostEqual(abs(values[48 + 4]), .8)
+        window = QQuickWindow()
+        item = GpuFollower(window.contentItem())
+        item._data = data
+        item.settings = {"split": 2, "lineWidth": 5, "plot": {"sx": 2, "sy": 2}}
+        node = item.updatePaintNode(None, None)
+        child = node._groups[0][-1]
+        pointer = int(child.geometry().vertexData())
+        self.assertEqual(child._material.width, 5)
+        for zoom in (1, 5, 20):
+            item.settings = {"split": 2, "lineWidth": 5, "trueThickness": True, "scale": zoom, "plot": {"sx": 2, "sy": 2}}
+            self.assertIs(item.updatePaintNode(node, None), node)
+            self.assertTrue(child._material.physical)
+            self.assertEqual(child._material.width, 2 * zoom)
+            self.assertEqual(int(child.geometry().vertexData()), pointer)
+        sip.delete(node)
+        sip.delete(window)
+
     def test_motion_animation_changes_uniforms_without_reuploading_geometry(self):
         from PyQt6 import sip
         from PyQt6.QtQuick import QQuickWindow
@@ -60,6 +123,28 @@ class RetainedGeometryTests(unittest.TestCase):
             self.assertFalse(item.pointAtMotion(progress)["valid"])
         item._data = ()
         self.assertFalse(item.pointAtMotion(.5)["valid"], "retired geometry must not locate the live marker")
+
+    def test_event_glyphs_are_small_zoom_dependent_and_thinned_in_screen_cells(self):
+        from plugins.GpuFollower import marker_geometry, prepare
+        from plugins.GpuStrokeMaterial import pack_shader
+        payload = {"retractions": [(i * .001, 0, i) for i in range(1000)],
+                   "unretractions": [(0, 0, 1000)]}
+        data = pack_shader(prepare((("current", payload),)))
+        self.assertEqual(marker_geometry(data, 1, 1, 1, False, False, False), b"")
+        vertices = array("f")
+        vertices.frombytes(marker_geometry(data, 1, 1, 1, False, True, False))
+        self.assertEqual(len(vertices), 28, "dense events must collapse to one hollow arrow")
+        self.assertEqual(max(vertices[::2]) - min(vertices[::2]), 4)
+        zoomed = array("f")
+        zoomed.frombytes(marker_geometry(data, 20, 20, 20, False, True, False))
+        self.assertGreater(len(zoomed), len(vertices), "zoom must reveal separate events")
+        first = zoomed[:28]
+        self.assertAlmostEqual((max(first[::2]) - min(first[::2])) * 20, 8, places=5)
+        up, down = array("f"), array("f")
+        up.frombytes(marker_geometry(data, 1, 1, 1, False, True, False))
+        down.frombytes(marker_geometry(data, 1, 1, 1, False, False, True))
+        self.assertEqual(list(up[::2]), list(down[::2]))
+        self.assertEqual(list(up[1::2]), [-v for v in down[1::2]])
 
     @classmethod
     def setUpClass(cls):

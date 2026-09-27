@@ -162,7 +162,7 @@ _MAX_CACHE_ARC_ENTRIES = 200_000
 # build walk, not the hydrated arrays) — every older cache's
 # counts may read zero for never-hydrated layers, which is exactly
 # the resumed-session dead-slider report; refusing them rebuilds.
-_CACHE_VERSION = 11
+_CACHE_VERSION = 12
 _LARGE_FILE_COMPACT_THRESHOLD = 128 * 1024 * 1024
 # Hardening bounds for hostile/corrupt gcode (panel security P2-4): a
 # real gcode line is well under 1 KB, real prints stay under ~100k
@@ -328,6 +328,11 @@ class LayerMotionIndex:
     # what layer_start_extruding tells apart).
     travel_starts: List[List[int]] = field(default_factory=list)
     travel_ends: List[List[int]] = field(default_factory=list)
+    motion_extrusion: List[array] = field(default_factory=list)
+    layer_heights: List[float] = field(default_factory=list)
+    filament_diameter: float = 1.75
+    extruder_events: List[List[Tuple[int, bool]]] = field(default_factory=list)
+    layer_start_retracted: List[bool] = field(default_factory=list)
     layer_start_positions: List[Tuple[float, float, float]] = field(default_factory=list)
     layer_start_absolute: List[bool] = field(default_factory=list)
     layer_start_units: List[float] = field(default_factory=list)
@@ -787,7 +792,7 @@ class _FeatureTracker:
     __slots__ = ("runs", "starts", "ends", "count", "last_type", "span",
                  "open_type", "e", "absolute_e", "extruding", "start_type",
                  "start_e", "start_e_absolute", "start_extruding", "plane",
-                 "start_plane")
+                 "start_plane", "events", "retracted", "start_retracted", "extrusions")
 
     def __init__(self) -> None:
         self.runs: List[List[int]] = []
@@ -812,6 +817,9 @@ class _FeatureTracker:
         # G17 is the default plane: a file that never selects one is XY.
         self.plane = ArcGeometry.PLANE_XY
         self.start_plane = ArcGeometry.PLANE_XY
+        self.events = []
+        self.extrusions = array("f")
+        self.retracted = self.start_retracted = False
 
     def open_layer(self) -> None:
         """Seed a new layer from the modal state and reset the counters."""
@@ -821,6 +829,9 @@ class _FeatureTracker:
         self.start_e_absolute = self.absolute_e
         self.start_extruding = self.extruding
         self.start_plane = self.plane
+        self.start_retracted = self.retracted
+        self.events = []
+        self.extrusions = array("f")
         self.runs = []
         self.starts = []
         self.ends = []
@@ -869,6 +880,11 @@ class _FeatureTracker:
             runs[-1][1] = _TYPE_OTHER
             runs[-1][0] += span
 
+    def extruder_event(self, retract, collect):
+        if collect and len(self.events) < _MAX_MOTIONS_PER_LAYER and (not self.events or self.events[-1] != (self.count, retract)):
+            self.events.append((self.count, retract))
+        self.retracted = retract
+
     def add(self, axes: Dict[str, float], collect: bool) -> None:
         """Advance one motion's E and feature state.
 
@@ -882,6 +898,12 @@ class _FeatureTracker:
             value = axes["E"] if self.absolute_e else self.e + axes["E"]
             delta = value - self.e
             self.e = value
+        if collect:
+            self.extrusions.append(delta if math.isfinite(delta) and abs(delta) < 1e6 else 0.0)
+        if delta < -1e-9:
+            self.extruder_event(True, collect)
+        elif delta > 1e-9 and self.retracted:
+            self.extruder_event(False, collect)
         rolling = delta > 0.0
         if rolling != self.extruding:
             if collect:
@@ -938,6 +960,17 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                         if any(marker.match(line) for line in head_lines)), None)
     except OSError:
         sniffed = None
+    filament_diameter = 1.75
+    for line in head_lines if "head_lines" in locals() else ():
+        if b"filament_diameter" in line.lower() or line.upper().startswith(b";MATERIAL.DIAMETER:"):
+            match = re.search(rb"[:=]\s*([0-9.]+)", line)
+            if match:
+                try:
+                    value = float(match.group(1))
+                    if 0.1 <= value <= 10:
+                        filament_diameter = value
+                except ValueError:
+                    pass
     captures = dict(markers)
     # Which marker opens layer blocks — decided ONCE per file (the
     # critic's catch): the sniffed marker, else the earliest-ordered
@@ -1054,9 +1087,13 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 # The marker opens a layer: hand the closing one its
                 # feature arrays and seed this one's opening state.
                 finished = features.payload()
+                finished_events = features.events
+                finished_extrusions = features.extrusions
                 features.open_layer()
                 if current is not None:
                     current["features"] = finished
+                    current["events"] = finished_events
+                    current["extrusions"] = finished_extrusions
                 if len(blocks) >= _MAX_LAYER_BLOCKS:
                     # Marker-dense hostile file: stop tracking further
                     # layers. The last tracked block already closed at
@@ -1084,6 +1121,10 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                         "start_extruding": features.start_extruding,
                         "start_arc_plane": features.start_plane,
                         "features": None,
+                        "events": [],
+                        "extrusions": array("f"),
+                        "print_z": None,
+                        "start_retracted": features.start_retracted,
                     }
                     blocks.append(current)
                 if matched is not None:
@@ -1103,6 +1144,8 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                     # the tracker had not yet been handed, and a layer
                     # closed at EOF would never be given any.
                     current["features"] = features.payload()
+                    current["events"] = features.events
+                    current["extrusions"] = features.extrusions
                     current["motion_total"] = features.count
                     try:
                         current["elapsed"] = float(elapsed_match.group(1))
@@ -1161,6 +1204,10 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 features.absolute_e = True
             elif command == b"M83":
                 features.absolute_e = False
+            elif command in (b"G10", b"G11"):
+                collect_event = collect_motions and current is not None and current["end"] is None and features.count < _MAX_MOTIONS_PER_LAYER
+                if command == b"G10" or features.retracted:
+                    features.extruder_event(command == b"G10", collect_event)
             elif command == b"G92":
                 if "X" in axes:
                     x = axes["X"]
@@ -1197,6 +1244,7 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                     arc = ArcGeometry.descriptor(
                         features.plane, command in _ARC_CLOCKWISE, arc_words,
                         absolute_xyz=absolute_xyz)
+                moved_xy = nx != x or ny != y or arc is not None
                 x, y, z = nx, ny, nz
                 collect_here = collect_motions and current is not None \
                     and current["end"] is None \
@@ -1205,7 +1253,10 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 # not: the per-layer cap and the elapsed-marker boundary
                 # both stop the arrays without stopping the E state, and
                 # the next layer resumes from that state.
+                previous_e = features.e
                 features.add(axes, collect_here)
+                if current is not None and current["end"] is None and current["print_z"] is None and moved_xy and features.e > previous_e:
+                    current["print_z"] = z
                 if collect_here:
                     # Past the cap the layer's path data truncates and
                     # the byte-range fraction covers the rest — a
@@ -1224,6 +1275,8 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
         if current is not None and current["end"] is None:
             current["end"] = file_end
             current["features"] = features.payload()
+            current["events"] = features.events
+            current["extrusions"] = features.extrusions
             current["motion_total"] = features.count
 
     ranges: List[Tuple[int, int]] = []
@@ -1234,6 +1287,11 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
     types: List[List[List[int]]] = []
     travel_starts: List[List[int]] = []
     travel_ends: List[List[int]] = []
+    extrusion_columns = []
+    layer_heights = []
+    last_print_z = 0.0
+    extruder_events = []
+    start_retracted = []
     starts: List[Tuple[float, float, float]] = []
     start_absolute: List[bool] = []
     start_units: List[float] = []
@@ -1264,6 +1322,14 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
         types.append(block_features[0])
         travel_starts.append(block_features[1])
         travel_ends.append(block_features[2])
+        extrusion_columns.append(block.get("extrusions", array("f")))
+        print_z = block.get("print_z")
+        height = print_z - last_print_z if print_z is not None else 0.0
+        layer_heights.append(height if 0.001 <= height <= 10 else 0.2)
+        if print_z is not None:
+            last_print_z = print_z
+        extruder_events.append(block.get("events", []))
+        start_retracted.append(block.get("start_retracted", False))
         arcs.append(block["arcs"])
         start_arc_plane.append(int(block["start_arc_plane"]))
         starts.append(tuple(float(v) for v in block["start_position"]))
@@ -1357,6 +1423,11 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
         type_names=type_names,
         travel_starts=travel_starts,
         travel_ends=travel_ends,
+        motion_extrusion=extrusion_columns,
+        layer_heights=layer_heights,
+        filament_diameter=filament_diameter,
+        extruder_events=extruder_events,
+        layer_start_retracted=start_retracted,
         layer_start_positions=starts,
         layer_start_absolute=start_absolute,
         layer_start_units=start_units,
@@ -1421,6 +1492,7 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
             features.e = index.layer_start_e[layer] if layer < len(index.layer_start_e) else 0.0
             features.absolute_e = index.layer_start_e_absolute[layer] if layer < len(index.layer_start_e_absolute) else True
             features.extruding = index.layer_start_extruding[layer] if layer < len(index.layer_start_extruding) else True
+            features.retracted = index.layer_start_retracted[layer] if layer < len(index.layer_start_retracted) else False
             # The plane at this layer's first motion, never a default XY:
             # a G18 issued before the layer decides what its arcs mean.
             features.plane = index.layer_start_arc_plane[layer] \
@@ -1497,6 +1569,9 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
                     features.absolute_e = True
                 elif command == b"M83":
                     features.absolute_e = False
+                elif command in (b"G10", b"G11"):
+                    if command == b"G10" or features.retracted:
+                        features.extruder_event(command == b"G10", len(offsets) < _MAX_MOTIONS_PER_LAYER)
                 elif command == b"G92":
                     x = axes.get("X", x); y = axes.get("Y", y); z = axes.get("Z", z)
                     if "E" in axes: features.e = axes["E"]
@@ -1528,6 +1603,12 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
                 index.layer_start_arc_plane.append(ArcGeometry.PLANE_XY)
                 if len(index.layer_motion_counts) < len(index.ranges):
                     index.layer_motion_counts.append(0)
+            while len(index.extruder_events) < len(index.ranges):
+                index.extruder_events.append([])
+            index.extruder_events[layer] = features.events
+            while len(index.motion_extrusion) < len(index.ranges):
+                index.motion_extrusion.append(array("f"))
+            index.motion_extrusion[layer] = features.extrusions
             index.motion_offsets[layer] = offsets
             index.layer_motion_counts[layer] = len(offsets)
             index.motion_x[layer] = xs
@@ -1578,6 +1659,10 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
                     index.motion_types[old] = []
                     index.travel_starts[old] = []
                     index.travel_ends[old] = []
+                    if old < len(index.extruder_events):
+                        index.extruder_events[old] = []
+                    if old < len(index.motion_extrusion):
+                        index.motion_extrusion[old] = array("f")
                     index.hydrated_layers.remove(old)
         return True
     except OSError:
@@ -1614,6 +1699,27 @@ def _read_exact(handle: BinaryIO, size: int) -> bytes:
         chunks.extend(chunk)
         remaining -= len(chunk)
     return bytes(chunks)
+
+
+def _event_columns(counts, events, seeds):
+    if not events:
+        events = [[] for _ in counts]
+    if not seeds:
+        seeds = [False] * len(counts)
+    if len(events) != len(counts) or len(seeds) != len(counts) or not all(isinstance(v, bool) for v in seeds):
+        return None
+    clean = []
+    for count, rows in zip(counts, events, strict=True):
+        layer = []
+        for row in rows:
+            if not isinstance(row, (list, tuple)) or len(row) != 2:
+                return None
+            motion, retract = row
+            if not isinstance(motion, int) or not isinstance(retract, bool) or not 0 <= motion <= count or layer and motion < layer[-1][0]:
+                return None
+            layer.append([motion, retract])
+        clean.append(layer)
+    return {"extruder_events": clean, "start_retracted": list(seeds)}
 
 
 def _feature_columns(counts: Sequence[int], type_names: Sequence[str], columns) -> Optional[Dict]:
@@ -1903,6 +2009,11 @@ class PersistentIndexCache:
                 )
                 if feature_header is None:
                     return None
+                event_header = _event_columns(counts, header.get("extruder_events", []), header.get("start_retracted", []))
+                if event_header is None:
+                    return None
+                extruder_events = [[tuple(row) for row in rows] for rows in event_header["extruder_events"]]
+                start_retracted = event_header["start_retracted"]
                 types = feature_header.get("type_runs", untyped_runs)
                 travel_starts = feature_header.get("travel_starts", empty_markers)
                 travel_ends = feature_header.get("travel_ends", empty_markers)
@@ -1935,10 +2046,19 @@ class PersistentIndexCache:
                 start_arc_plane = list(arc_header.get(
                     "start_arc_plane", [ArcGeometry.PLANE_XY] * len(counts)))
 
+                heights = header.get("layer_heights", [])
+                diameter = header.get("filament_diameter", 1.75)
+                if not isinstance(heights, list) or (heights and len(heights) != len(counts)) or not all(isinstance(v, (int, float)) and math.isfinite(v) and 0.001 <= v <= 10 for v in heights):
+                    return None
+                if not isinstance(diameter, (int, float)) or not math.isfinite(diameter) or not 0.1 <= diameter <= 10:
+                    return None
+                if not isinstance(header.get("extrusion_column", False), bool):
+                    return None
                 offsets: List[array] = []
                 xs: List[array] = []
                 ys: List[array] = []
                 zs: List[array] = []
+                extrusion_columns = []
                 for count in counts:
                     if count < 0 or count > 100_000_000:
                         return None
@@ -1952,6 +2072,12 @@ class PersistentIndexCache:
                     zz.frombytes(_read_exact(handle, count * zz.itemsize))
                     if not (len(off) == len(xx) == len(yy) == len(zz) == count):
                         return None
+                    ee = array("f")
+                    if header.get("extrusion_column"):
+                        ee.frombytes(_read_exact(handle, count * ee.itemsize))
+                        if not all(math.isfinite(v) for v in ee):
+                            return None
+                    extrusion_columns.append(ee)
                     offsets.append(off)
                     xs.append(xx)
                     ys.append(yy)
@@ -1994,6 +2120,11 @@ class PersistentIndexCache:
                 type_names=type_names,
                 travel_starts=travel_starts,
                 travel_ends=travel_ends,
+                motion_extrusion=extrusion_columns,
+                layer_heights=header.get("layer_heights", []),
+                filament_diameter=header.get("filament_diameter", 1.75),
+                extruder_events=extruder_events,
+                layer_start_retracted=start_retracted,
                 layer_start_positions=starts,
                 layer_start_absolute=start_absolute,
                 layer_start_units=start_units,
@@ -2081,6 +2212,14 @@ class PersistentIndexCache:
                 # first re-hydration.
                 "motion_counts": list(index.layer_motion_counts),
             }
+            has_extrusions = len(index.motion_extrusion) == layer_count and all(len(index.motion_extrusion[i]) == counts[i] for i in range(layer_count))
+            if index.motion_extrusion and not has_extrusions:
+                return
+            header.update(extrusion_column=has_extrusions, layer_heights=index.layer_heights, filament_diameter=index.filament_diameter)
+            event_columns = _event_columns(counts, index.extruder_events, index.layer_start_retracted)
+            if event_columns is None:
+                return
+            header.update(event_columns)
             header.update(features)
             header.update(arc_columns)
             raw_header = json.dumps(header, separators=(",", ":")).encode("utf-8")
@@ -2093,7 +2232,8 @@ class PersistentIndexCache:
             # tobytes is what makes the encode lock-free: header and
             # geometry leave the hold as one consistent view.
             snapshot = [(offsets.tobytes(), index.motion_x[i].tobytes(),
-                         index.motion_y[i].tobytes(), index.motion_z[i].tobytes())
+                         index.motion_y[i].tobytes(), index.motion_z[i].tobytes(),
+                         index.motion_extrusion[i].tobytes() if has_extrusions else b"")
                         for i, offsets in enumerate(index.motion_offsets)]
         path = self._path(identity)
         # Unique per CONCURRENT writer, not merely per instant: the
@@ -2107,11 +2247,12 @@ class PersistentIndexCache:
                 handle.write(_CACHE_MAGIC)
                 handle.write(struct.pack("<I", len(raw_header)))
                 handle.write(raw_header)
-                for offsets, xs, ys, zs in snapshot:
+                for offsets, xs, ys, zs, ee in snapshot:
                     handle.write(offsets)
                     handle.write(xs)
                     handle.write(ys)
                     handle.write(zs)
+                    handle.write(ee)
             os.replace(temp_path, path)
             self.prune(keep=path)
         except OSError:

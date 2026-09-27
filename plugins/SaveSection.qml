@@ -68,7 +68,7 @@ ColumnLayout {
                 }
             }
         }
-        Cura.PrimaryButton {
+        CentredPrimaryButton {
             Layout.fillWidth: true
             text: "Save configuration"
             enabled: root.printerModel != null && root.printerModel.canSaveConfig

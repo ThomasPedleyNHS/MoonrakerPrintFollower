@@ -380,7 +380,7 @@ class ArcUnitConversionTests(unittest.TestCase):
         inches = _index("M82\nG20\n;LAYER:0\n;TYPE:SKIN\n"
                         "G0 X1 Y0\nG3 X0 Y1 I-1 J0 E1\n")
         millimetres = _index("M82\n;LAYER:0\n;TYPE:SKIN\n"
-                             "G0 X25.4 Y0\nG3 X0 Y25.4 I-25.4 J0 E1\n")
+                             "G0 X25.4 Y0\nG3 X0 Y25.4 I-25.4 J0 E25.4\n")
         self.assertEqual(inches.motion_arcs[0], {1: (17, False, -25.4, 0.0)})
         self.assertLess(_deviation(_chain(inches, "SKIN"), 0.0, 0.0, 25.4), 1e-4)
         self.assertEqual(layer_polylines(inches, 0), layer_polylines(millimetres, 0))
@@ -649,7 +649,7 @@ class ArcCacheTests(unittest.TestCase):
         # nothing about the file it came from: every v9 blob is refused
         # rather than read as an arc-free one.
         blob = self._blob(ARC_SOURCE)
-        self.assertEqual(GCodeIndex._CACHE_VERSION, 11,
+        self.assertEqual(GCodeIndex._CACHE_VERSION, 12,
                          "the cache version must move past the era that could drop arcs")
         self._rewrite_header(blob, dict(self._header_of(blob), version=9))
         self.assertIsNone(self.cache.load(self.identity),
@@ -730,7 +730,7 @@ class ArcCacheTests(unittest.TestCase):
         # chord. Accepting one would silently regress the geometry, so it
         # is refused and the file is read again.
         blob = self._blob(ARC_SOURCE)
-        self.assertEqual(self._header_of(blob)["version"], 11)
+        self.assertEqual(self._header_of(blob)["version"], 12)
         self._rewrite_header(blob, dict(self._header_of(blob), version=8))
         self.assertIsNone(self.cache.load(self.identity),
                           "a pre-arc cache blob was accepted as arc-aware")

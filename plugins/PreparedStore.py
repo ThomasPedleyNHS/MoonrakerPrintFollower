@@ -88,7 +88,7 @@ def _windows_liveness(pid: int) -> bool:
         _CloseHandle(handle)
 
 _MAGIC = b"MPFP"
-_FORMAT_VERSION = 3
+_FORMAT_VERSION = 4
 _HEADER_FMT = "<4sIHHB"
 _TABLE_ENTRY_FMT = "<BQI"
 _DEFAULT_MAX_BYTES = 512 * 1024 * 1024

@@ -61,7 +61,7 @@ memo hit rather than a build.
 from __future__ import annotations
 
 from bisect import bisect_left
-from math import hypot
+from math import hypot, pi, isfinite
 import threading
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 import weakref
@@ -683,6 +683,46 @@ def layer_polylines(index: LayerMotionIndex, layer: int) -> Optional[dict]:
     return prepare_layer(index, layer)
 
 
+def extrusion_widths(index, layer, should_yield=None):
+    """Estimated rectangular bead widths in millimetres, once per preparation.
+
+    Extrusion is filament length, not bead width. Divide its volume by the
+    XY path length and deposited layer height. Pure-E and travel moves carry
+    zero width. Missing profiles retain the legacy nominal width.
+    """
+    if layer < 0 or any(layer >= len(column) for column in
+                        (index.motion_x, index.motion_y, index.motion_z)):
+        return ()
+    xs, ys, zs = index.motion_x[layer], index.motion_y[layer], index.motion_z[layer]
+    es = index.motion_extrusion[layer] if layer < len(index.motion_extrusion) else ()
+    if len(es) != len(xs) or len(ys) != len(xs) or len(zs) != len(xs):
+        return ()
+    height = index.layer_heights[layer] if layer < len(index.layer_heights) else 0.2
+    height = height if isinstance(height, (int, float)) and isfinite(height) and 0.001 <= height <= 10 else 0.2
+    diameter = index.filament_diameter
+    diameter = diameter if isinstance(diameter, (int, float)) and isfinite(diameter) and 0.1 <= diameter <= 10 else 1.75
+    area = pi * diameter * diameter / 4
+    start = (*_layer_start(index, layer, xs, ys), _layer_start_z(index, layer, zs))
+    arcs = index.motion_arcs[layer] if layer < len(index.motion_arcs) else {}
+    widths = []
+    for motion, e in enumerate(es):
+        _check_yield(should_yield, motion)
+        end = (xs[motion], ys[motion], zs[motion])
+        length = hypot(end[0] - start[0], end[1] - start[1])
+        if e > 0 and motion in arcs:
+            previous = start
+            length = 0.0
+            for point in ArcGeometry.tessellate(arcs[motion], start, end):
+                length += hypot(point[0] - previous[0], point[1] - previous[1])
+                previous = point
+        width = e * area / (length * height) if e > 0 and length > 1e-6 else 0.0
+        # Corrupt E, coordinate resets and purging while moving can produce
+        # implausible estimates. They must not cover the complete viewport.
+        widths.append(width if isfinite(width) and 0.001 <= width <= 10 else 0.0)
+        start = end
+    return tuple(widths)
+
+
 def _prepare(index: LayerMotionIndex, layer: int,
              should_yield: Optional[Callable[[], bool]] = None) -> dict:
     """The build itself: the edge walk, the per-class budgets and the
@@ -700,7 +740,7 @@ def _prepare(index: LayerMotionIndex, layer: int,
         if drawn:
             prepared[name] = [tuple(segment) for segment in
                               _budgeted(drawn, MAX_POINTS_PER_CLASS, should_yield)]
-    return {
+    result = {
         "classes": prepared,
         "travels": [tuple(segment) for segment in
                     _budgeted(travels, MAX_TRAVEL_POINTS, should_yield)],
@@ -708,6 +748,20 @@ def _prepare(index: LayerMotionIndex, layer: int,
         "travelEnds": end_marks,
         "motions": len(xs),
     }
+    widths = extrusion_widths(index, layer, should_yield)
+    if widths:
+        result["widths"] = widths
+    if layer < len(index.extruder_events) and index.extruder_events[layer]:
+        marks = {"retractions": [], "unretractions": []}
+        for motion, retract in index.extruder_events[layer]:
+            if motion == 0:
+                x, y = _layer_start(index, layer, index.motion_x[layer], index.motion_y[layer])
+            else:
+                x, y = float(index.motion_x[layer][motion - 1]), float(index.motion_y[layer][motion - 1])
+            marks["retractions" if retract else "unretractions"].append((x, y, motion))
+        result.update(marks)
+    return result
+
 
 
 def encode_layer(payload: dict) -> bytes:
@@ -748,6 +802,11 @@ def encode_layer(payload: dict) -> bytes:
     parts.append(pack_segments(payload.get("travels") or ()))
     parts.append(pack_triples(payload.get("travelStarts") or ()))
     parts.append(pack_triples(payload.get("travelEnds") or ()))
+    if "retractions" in payload or "unretractions" in payload:
+        parts.extend((b"EXTR", pack_triples(payload.get("retractions") or ()), pack_triples(payload.get("unretractions") or ())))
+    if "widths" in payload:
+        values = array("f", payload["widths"])
+        parts.extend((b"WIDT", pack("<i", len(values)), values.tobytes()))
     return b"".join(parts)
 
 
@@ -823,8 +882,23 @@ def decode_layer(raw: bytes, checkpoint=None, *, immutable=False) -> dict:
     travels = read_segments()
     starts = read_triples()
     ends = read_triples()
-    return {"classes": classes, "travels": travels, "travelStarts": starts,
-            "travelEnds": ends, "motions": motions}
+    result = {"classes": classes, "travels": travels, "travelStarts": starts,
+              "travelEnds": ends, "motions": motions}
+    if raw[offset:offset + 4] == b"EXTR":
+        offset += 4
+        result.update(retractions=read_triples(), unretractions=read_triples())
+    if raw[offset:offset + 4] == b"WIDT":
+        offset += 4
+        count, = unpack_from("<i", raw, offset)
+        offset += 4
+        if count < 0 or count != motions or offset + count * 4 != len(raw):
+            raise ValueError("invalid width profile")
+        values = array("f")
+        values.frombytes(raw[offset:offset + count * 4])
+        if not all(isfinite(value) and 0 <= value <= 10 for value in values):
+            raise ValueError("invalid bead width")
+        result["widths"] = tuple(values) if immutable else list(values)
+    return result
 
 
 def split_index(index: LayerMotionIndex, layer: int, file_position: int) -> Optional[int]:

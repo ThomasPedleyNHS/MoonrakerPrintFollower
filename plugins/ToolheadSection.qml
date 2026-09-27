@@ -356,7 +356,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("thin_margin").width
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Home X"
                 objectName: "moonrakerHomeX"
@@ -371,7 +371,7 @@ ColumnLayout {
                     text: "Home the X axis."
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Home Y"
                 objectName: "moonrakerHomeY"
@@ -386,7 +386,7 @@ ColumnLayout {
                     text: "Home the Y axis."
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Home Z"
                 objectName: "moonrakerHomeZ"
@@ -406,7 +406,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("thin_margin").width
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Centre toolhead"
                 enabled: root.printerModel != null && root.printerModel.jogEnabled
@@ -420,7 +420,7 @@ ColumnLayout {
                     text: "Move X and Y to the build plate centre, 5 cm above the plate."
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 text: "Z to 0"
                 enabled: root.printerModel != null && root.printerModel.jogEnabled
                 onClicked: root.printerModel.zToZero()
@@ -433,7 +433,7 @@ ColumnLayout {
                     text: "Move Z down to 0, the bed level after homing."
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 text: "Motors off"
                 enabled: root.printerModel != null && root.printerModel.jogEnabled
                 onClicked: root.printerModel.motorsOff()
@@ -464,7 +464,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeDistance5Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeDistance5Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeDistance === 5
@@ -480,7 +480,7 @@ ColumnLayout {
                         text: "Extrude distance: 5 mm."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeDistance !== 5
                     text: "5"
@@ -504,7 +504,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeDistance10Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeDistance10Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeDistance === 10
@@ -520,7 +520,7 @@ ColumnLayout {
                         text: "Extrude distance: 10 mm."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeDistance !== 10
                     text: "10"
@@ -544,7 +544,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeDistance25Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeDistance25Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeDistance === 25
@@ -560,7 +560,7 @@ ColumnLayout {
                         text: "Extrude distance: 25 mm."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeDistance !== 25
                     text: "25"
@@ -584,7 +584,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeDistance75Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeDistance75Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeDistance === 75
@@ -600,7 +600,7 @@ ColumnLayout {
                         text: "Extrude distance: 75 mm."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeDistance !== 75
                     text: "75"
@@ -624,7 +624,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeDistance100Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeDistance100Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeDistance === 100
@@ -640,7 +640,7 @@ ColumnLayout {
                         text: "Extrude distance: 100 mm."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeDistance !== 100
                     text: "100"
@@ -669,7 +669,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: UM.Theme.getSize("thin_margin").width
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Extrude"
                 enabled: root.printerModel != null && root.printerModel.jogEnabled
@@ -683,7 +683,7 @@ ColumnLayout {
                     text: "Extrude the configured distance at the configured speed."
                 }
             }
-            Cura.SecondaryButton {
+            CentredSecondaryButton {
                 Layout.fillWidth: true
                 text: "Retract"
                 enabled: root.printerModel != null && root.printerModel.jogEnabled
@@ -712,7 +712,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeSpeed60Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeSpeed60Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeSpeed === 60
@@ -728,7 +728,7 @@ ColumnLayout {
                         text: "Extrusion speed: 1 mm/s."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeSpeed !== 60
                     text: "1"
@@ -750,7 +750,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeSpeed120Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeSpeed120Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeSpeed === 120
@@ -766,7 +766,7 @@ ColumnLayout {
                         text: "Extrusion speed: 2 mm/s."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeSpeed !== 120
                     text: "2"
@@ -788,7 +788,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeSpeed300Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeSpeed300Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeSpeed === 300
@@ -804,7 +804,7 @@ ColumnLayout {
                         text: "Extrusion speed: 5 mm/s."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeSpeed !== 300
                     text: "5"
@@ -826,7 +826,7 @@ ColumnLayout {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: extrudeSpeed1500Primary.implicitHeight
-                Cura.PrimaryButton {
+                CentredPrimaryButton {
                     id: extrudeSpeed1500Primary
                     anchors.fill: parent
                     visible: root.printerModel != null && root.printerModel.extrudeSpeed === 1500
@@ -842,7 +842,7 @@ ColumnLayout {
                         text: "Extrusion speed: 25 mm/s."
                     }
                 }
-                Cura.SecondaryButton {
+                CentredSecondaryButton {
                     anchors.fill: parent
                     visible: root.printerModel == null || root.printerModel.extrudeSpeed !== 1500
                     text: "25"

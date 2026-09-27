@@ -2,6 +2,34 @@
 from tests import qml_engine_support as harness
 
 class PlateFaceRenderTests(harness.PlateFaceRenderTests):
+    def test_software_event_glyphs_only_draw_after_playback_reaches_them(self):
+        _monitor, window, face, _baseline = self._mount_empty()
+        face.setProperty("gpuRendering", False)
+        face.setProperty("showRetractions", True)
+        face.setProperty("showUnretractions", True)
+        payload = {"classes": {}, "travels": [], "motions": 5,
+                   "retractions": [(91, 97, 0)], "unretractions": [(151, 97, 2)]}
+        layer = self._native_layer(payload, face, prefix_split=0)
+        self._printer.setLayers({"prev": None, "current": layer, "next": None})
+        self._printer.setSplit(0)
+        self._pump_ms(100)
+        empty = window.grabWindow()
+        self._printer.setSplit(1)
+        self._pump_ms(100)
+        retracted = window.grabWindow()
+        self.assertGreater(self._pixel_diff(retracted, empty, face, window), 0)
+        self._printer.setSplit(2)
+        self._pump_ms(100)
+        before_prime = window.grabWindow()
+        self.assertEqual(self._pixel_diff(before_prime, retracted, face, window), 0)
+        self._printer.setSplit(3)
+        self._pump_ms(100)
+        primed = window.grabWindow()
+        self.assertGreater(self._pixel_diff(primed, before_prime, face, window), 0)
+        self._printer.setSplit(0)
+        self._pump_ms(100)
+        self.assertEqual(self._pixel_diff(window.grabWindow(), empty, face, window), 0)
+
     def test_the_native_prefix_and_the_qml_tail_match_intensity_at_production_width(self):
         # The review's finding #3, closed: at the production
         # lineScale (0.7 — subpixel strokes) the native prefix and

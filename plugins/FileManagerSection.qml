@@ -37,7 +37,7 @@ ColumnLayout {
             elide: Text.ElideRight
             wrapMode: Text.NoWrap
         }
-        Cura.SecondaryButton {
+        CentredSecondaryButton {
             Layout.fillWidth: true
             text: "File manager"
             enabled: root.printerModel != null && root.printerModel.monitorConnected

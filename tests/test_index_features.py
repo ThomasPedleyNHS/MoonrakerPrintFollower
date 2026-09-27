@@ -2,6 +2,82 @@
 from tests import index_plate_support as harness
 
 class FeatureTypeTests(harness.FeatureTypeTests):
+    def test_bead_width_profile_is_per_motion_and_survives_compact_cache_and_preparation(self):
+        from math import pi
+        from plugins.PlateProgress import prepare_layer, encode_layer, decode_layer
+        data = (b'; filament_diameter = 2\nM83\n;LAYER:0\nG0 Z0.2\n;TYPE:WALL-OUTER\n'
+                b'G1 X10 E0.2\nG1 X20 E0.4\nG1 E-1\n;LAYER:1\n'
+                b'G0 Z0.5\nG0 X30\nG1 E1\nG1 X40 E0.3\n')
+        with harness.tempfile.TemporaryDirectory() as directory:
+            path = harness.os.path.join(directory, "widths.gcode")
+            with open(path, "wb") as handle:
+                handle.write(data)
+            full = harness.build_index_from_file(path, compact=False)
+            compact = harness.build_index_from_file(path, compact=True)
+            self.assertAlmostEqual(full.filament_diameter, 2)
+            self.assertAlmostEqual(full.layer_heights[0], .2)
+            self.assertAlmostEqual(full.layer_heights[1], .3)
+            identity = harness.RemoteFileIdentity("widths.gcode", len(data), 1, "widths")
+            store = harness.PersistentIndexCache(directory)
+            store.save(identity, compact)
+            compact = store.load(identity)
+            self.assertIsNotNone(compact)
+            for layer in (1, 0):
+                self.assertTrue(harness.hydrate_layer_from_file(compact, path, layer))
+                a = prepare_layer(full, layer)
+                b = prepare_layer(compact, layer)
+                self.assertEqual(a["widths"], b["widths"])
+                loaded = decode_layer(encode_layer(a), immutable=True)
+                self.assertEqual(encode_layer(a), encode_layer(loaded))
+            widths = prepare_layer(full, 0)["widths"]
+            self.assertEqual(widths[0], 0)
+            self.assertAlmostEqual(widths[1], pi * .2 / (10 * .2), places=6)
+            self.assertAlmostEqual(widths[2], pi * .4 / (10 * .2), places=6)
+            self.assertEqual(widths[3], 0)
+            store.save(identity, full)
+            restored = store.load(identity)
+            self.assertEqual(restored.motion_extrusion, full.motion_extrusion)
+            self.assertEqual(restored.layer_heights, full.layer_heights)
+
+    def test_arc_width_uses_the_path_length_not_the_endpoint_chord(self):
+        from math import pi
+        from plugins.PlateProgress import prepare_layer
+        data = b'; filament_diameter = 2\nM83\nG0 X10 Y0 Z0.2\n;LAYER:0\nG3 X-10 Y0 I-10 J0 E1\n'
+        index = harness.build_index_from_bytes(data)
+        width = prepare_layer(index, 0)["widths"][0]
+        self.assertAlmostEqual(width, pi / (pi * 10 * .2), delta=.001)
+
+    def test_extruder_events_distinguish_retractions_unretractions_and_resets(self):
+        from plugins.PlateProgress import prepare_layer, encode_layer, decode_layer
+        data = (b"M83\n;LAYER:0\nG1 X10 E1\nG1 E-1\nG0 X20\nG92 E0\n"
+                b"G1 E1\nG1 X30 E1\nG10\nG0 X40\nG11\n;TIME_ELAPSED:2\n")
+        index = harness.build_index_from_bytes(data)
+        self.assertEqual(index.extruder_events[0], [(1, True), (3, False), (5, True), (6, False)])
+        payload = prepare_layer(index, 0)
+        self.assertEqual(payload["retractions"], [(10, 0, 1), (30, 0, 5)])
+        self.assertEqual(payload["unretractions"], [(20, 0, 3), (40, 0, 6)])
+        decoded = decode_layer(encode_layer(payload), immutable=True)
+        self.assertEqual(encode_layer(decoded), encode_layer(payload))
+        self.assertEqual(tuple(payload["retractions"]), decoded["retractions"])
+
+    def test_retraction_state_survives_compact_hydration_and_cache_restore(self):
+        data = b"M83\n;LAYER:0\nG1 X10 E1\nG1 E-1\n;LAYER:1\nG0 X20\nG1 E1\nG1 X30 E1\n"
+        with harness.tempfile.TemporaryDirectory() as directory:
+            path = harness.os.path.join(directory, "events.gcode")
+            with open(path, "wb") as handle:
+                handle.write(data)
+            index = harness.build_index_from_file(path, compact=True)
+            self.assertEqual(index.layer_start_retracted, [False, True])
+            self.assertTrue(harness.hydrate_layer_from_file(index, path, 1))
+            self.assertEqual(index.extruder_events[1], [(1, False)])
+            identity = harness.RemoteFileIdentity("events.gcode", len(data), 1, "events")
+            store = harness.PersistentIndexCache(directory)
+            store.save(identity, index)
+            restored = store.load(identity)
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.extruder_events, index.extruder_events)
+            self.assertEqual(restored.layer_start_retracted, [False, True])
+
     def test_a_marker_types_every_motion_that_follows_it(self):
         index = harness.build_index_from_bytes(
             b";LAYER:0\n"

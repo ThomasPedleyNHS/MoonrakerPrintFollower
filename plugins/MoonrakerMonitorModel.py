@@ -297,6 +297,9 @@ def _follower_view_state(stored) -> dict:
         "showNext": flag("showNext", True),
         "showBase": flag("showBase", True),
         "showTravels": flag("showTravels", False),
+        "trueThickness": flag("trueThickness", False),
+        "showRetractions": flag("showRetractions", False),
+        "showUnretractions": flag("showUnretractions", False),
         "antialiasing": flag("antialiasing", False),
         "keepCentred": flag("keepCentred", False),
         "lineScale": scale(stored.get("lineScale", 1.0)),
@@ -438,7 +441,8 @@ class _RenderSurface:
                 round(float(view.get("dpr") or 1.0), 6),
                 round(float(plot.get("offsetX") or 0.0), 6), round(float(plot.get("offsetY") or 0.0), 6),
                 round(float(plot.get("sx") or 0.0), 6), round(float(plot.get("sy") or 0.0), 6),
-                round(float(plot.get("bedXMin") or 0.0), 6), round(float(plot.get("bedYMax") or 0.0), 6))
+                round(float(plot.get("bedXMin") or 0.0), 6), round(float(plot.get("bedYMax") or 0.0), 6),
+                bool(view.get("trueThickness")), float(view.get("lineWidthPx") or 0.0))
 
 
 class MoonrakerMonitorModel(PrinterOutputModel):
@@ -522,7 +526,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # paints the new current layer as a pending base while it
         # still reads the previous attached state and then clears it
         # .
-        ("followerViewChanged", ("followerShowPrevious", "followerShowNext", "followerShowBase", "followerShowTravels", "followerAntialiasing", "followerKeepCentred", "followerSoftwareRendering", "followerMotionSmoothing", "followerLineScale",
+        ("followerViewChanged", ("followerShowPrevious", "followerShowNext", "followerShowBase", "followerShowTravels", "followerShowRetractions", "followerShowUnretractions", "followerTrueThickness", "followerAntialiasing", "followerKeepCentred", "followerSoftwareRendering", "followerMotionSmoothing", "followerLineScale",
                                  "followerTravelVisualRatio", "followerAttached", "followerLayerAnchor")),
         # The popover's pause block: the schedule's rows and the
         # candidate-derived gates. Its own group — a pause landing
@@ -544,7 +548,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                            "cpuTemperature", "mcuSummary", "mcuItems")),
         ("endstopsChanged", ("endstopItems", "endstopSummary")),
         ("actionChanged", ("printActive", "printJobCaption", "canPausePrint", "canResumePrint", "pauseReason", "pauseReasonDetail", "resumeReason", "resumeReasonDetail", "canCancelPrint", "actionBusy",
-                           "actionStatus", "emergencyHoldProgress")),
+                           "actionStatus", "actionTimestamp", "emergencyHoldProgress")),
         ("controlsChanged", ("monitorLayerHeight", "macroNames", "hasQuadGantryLevel", "hasBedMesh", "canRunSetup",
                              "temperaturePresetNames", "canApplyTemperaturePreset", "speedFactorPercent", "flowFactorPercent",
                              "zOffset", "zOffsetText", "fanControlItems", "ledItems", "saveConfigPending", "saveConfigSummary",
@@ -693,6 +697,9 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         self._follower_show_next = follower_view["showNext"]
         self._follower_show_base = follower_view["showBase"]
         self._follower_show_travels = follower_view["showTravels"]
+        self._follower_true_thickness = follower_view["trueThickness"]
+        self._follower_show_retractions = follower_view["showRetractions"]
+        self._follower_show_unretractions = follower_view["showUnretractions"]
         self._follower_antialiasing = follower_view["antialiasing"]
         self._follower_keep_centred = follower_view["keepCentred"]
         self._follower_line_scale = follower_view["lineScale"]
@@ -1352,6 +1359,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # The follower's attach state belongs to ONE print: a new file
         # re-attaches it before the value block reads the state.
         self._observe_follower_job(getattr(snapshot, "job_key", None))
+        self._commands.observe_job(getattr(snapshot, "job_key", None))
         if self._improving_eta and snapshot is not self._improve_started_snapshot \
                 and not snapshot.load_active:
             # The coordinator REBUILT its snapshot since the improve
@@ -1677,7 +1685,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             resumeReasonDetail=REASON_DETAIL.get(resume_verdict.reason, ""),
             printJobCaption=print_job_caption(observation),
             canCancelPrint=commands.print_active and not commands.busy, actionBusy=commands.busy,
-            actionStatus=commands.status, emergencyStopClicks=commands.clicks,
+            actionStatus=commands.status, actionTimestamp=commands.status_timestamp, emergencyStopClicks=commands.clicks,
             emergencyHoldProgress=commands.hold_progress, powerDevices=self._controls.power_devices(),
             bedMeshAvailable=bool(mesh), bedMeshProfile=str(mesh.get("profile") or "Current mesh") if mesh else "",
             bedMeshRows=int(mesh.get("rows") or 0), bedMeshColumns=int(mesh.get("columns") or 0),
@@ -1711,11 +1719,14 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             followerShowNext=self._follower_show_next,
             followerShowBase=self._follower_show_base,
             followerShowTravels=self._follower_show_travels,
+            followerShowRetractions=self._follower_show_retractions,
+            followerShowUnretractions=self._follower_show_unretractions,
             followerAntialiasing=self._follower_antialiasing,
             followerKeepCentred=self._follower_keep_centred,
             followerMotionSmoothing=bool(getattr(self._config(), "path_smoothing", True)),
             followerSoftwareRendering=bool(getattr(self._config(), "software_follower_renderer", False)),
             followerLineScale=self._follower_line_scale,
+            followerTrueThickness=self._follower_true_thickness,
             followerTravelVisualRatio=_PLATE_TRAVEL_VISUAL_RATIO,
             followerAttached=self._follower_attached,
             followerLayerAnchor=self._follower_layer_anchor,
@@ -1869,6 +1880,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     canCancelPrint = value_property(bool, "canCancelPrint", actionChanged, False)
     actionBusy = value_property(bool, "actionBusy", actionChanged, False)
     actionStatus = value_property(str, "actionStatus", actionChanged, "")
+    actionTimestamp = value_property(str, "actionTimestamp", actionChanged, "")
     temperatureItems = value_property(QVariant, "temperatureItems", peripheralsChanged, [])
     fanItems = value_property(QVariant, "fanItems", peripheralsChanged, [])
     filamentSensorItems = value_property(QVariant, "filamentSensorItems", peripheralsChanged, [])
@@ -1892,10 +1904,13 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     followerShowNext = value_property(bool, "followerShowNext", followerViewChanged, True)
     followerShowBase = value_property(bool, "followerShowBase", followerViewChanged, True)
     followerShowTravels = value_property(bool, "followerShowTravels", followerViewChanged, False)
+    followerShowRetractions = value_property(bool, "followerShowRetractions", followerViewChanged, False)
+    followerShowUnretractions = value_property(bool, "followerShowUnretractions", followerViewChanged, False)
     followerAntialiasing = value_property(bool, "followerAntialiasing", followerViewChanged, False)
     followerKeepCentred = value_property(bool, "followerKeepCentred", followerViewChanged, False)
     followerMotionSmoothing = value_property(bool, "followerMotionSmoothing", followerViewChanged, True)
     followerSoftwareRendering = value_property(bool, "followerSoftwareRendering", followerViewChanged, False)
+    followerTrueThickness = value_property(bool, "followerTrueThickness", followerViewChanged, False)
     followerLineScale = value_property(float, "followerLineScale", followerViewChanged, 1.0)
     followerTravelVisualRatio = value_property(float, "followerTravelVisualRatio", followerViewChanged,
                                                _PLATE_TRAVEL_VISUAL_RATIO)
@@ -2840,6 +2855,9 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 "showNext": self._follower_show_next,
                 "showBase": self._follower_show_base,
                 "showTravels": self._follower_show_travels,
+                "trueThickness": self._follower_true_thickness,
+                "showRetractions": self._follower_show_retractions,
+                "showUnretractions": self._follower_show_unretractions,
                 "antialiasing": self._follower_antialiasing,
                 "keepCentred": self._follower_keep_centred,
                 "lineScale": self._follower_line_scale,
@@ -3161,6 +3179,22 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         self._publish()
 
     @pyqtSlot(bool)
+    def setFollowerShowRetractions(self, show):
+        if self._follower_show_retractions is bool(show):
+            return
+        self._follower_show_retractions = bool(show)
+        self._save_state()
+        self._publish()
+
+    @pyqtSlot(bool)
+    def setFollowerShowUnretractions(self, show):
+        if self._follower_show_unretractions is bool(show):
+            return
+        self._follower_show_unretractions = bool(show)
+        self._save_state()
+        self._publish()
+
+    @pyqtSlot(bool)
     def setFollowerAntialiasing(self, enabled):
         if self._follower_antialiasing is bool(enabled):
             return
@@ -3176,14 +3210,28 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         self._save_state()
         self._publish()
 
+    @pyqtSlot(bool)
+    def setFollowerTrueThickness(self, enabled):
+        if self._follower_true_thickness is bool(enabled):
+            return
+        self._follower_true_thickness = bool(enabled)
+        self._save_state()
+        self._publish()
+        for surface in self._plate_surfaces.values():
+            effective = surface.stage["view"] or surface.view
+            if effective:
+                surface.stage["view"] = dict(effective, trueThickness=bool(enabled))
+                self._arm_context_flush(surface)
+
     @pyqtSlot(float)
     def setFollowerLineScale(self, scale):
         try:
             scale = float(min(8, max(1, round(float(scale)))))
         except (TypeError, ValueError, OverflowError):
             return
-        if self._follower_line_scale == scale:
+        if self._follower_line_scale == scale and not self._follower_true_thickness:
             return
+        self.setFollowerTrueThickness(False)
         self._follower_line_scale = scale
         self._save_state()
         self._publish()
@@ -3258,14 +3306,16 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         if total is None:
             total = layer_count or None
         scheduled = selected is not None and selected in manual
-        can_toggle = not baked_block and pause_can_toggle(active, selected, current, total)
+        indexed = bool(layer_count)
+        can_toggle = indexed and not baked_block and pause_can_toggle(active, selected, current, total)
         return {
             "pauseAtLayerActive": active,
             "pauseAtLayerCandidate": candidate,
             "pauseAtLayerCanToggle": can_toggle, "pauseAtLayerScheduled": scheduled,
             "pauseAtLayerSummary": block.get("pauseAtLayerSummary", ""),
             "pauseAtLayerItems": items,
-            "pauseAtLayerUnavailableText": ("a pause is baked into the gcode at this layer" if baked_block
+            "pauseAtLayerUnavailableText": ("Print not indexed" if active and not indexed
+                                            else "a pause is baked into the gcode at this layer" if baked_block
                                             else pause_unavailable(active, can_toggle, scheduled, current, selected)),
             # The rows' own facts, unchanged by whose layer is selected.
             "pauseAtLayerHasBaked": bool(block.get("pauseAtLayerHasBaked")),
@@ -3714,7 +3764,8 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             # adaptive grid width. Both genuinely invalidate the bake.
             dpr=round(min(2.0, max(1.0, float(
                 surface.view.get("dpr") or 1.0))), 6),
-            zoom=round(float(surface.view.get("scale") or 1.0), 6))
+            zoom=round(float(surface.view.get("scale") or 1.0), 6),
+            true_thickness=bool(surface.view.get("trueThickness")))
 
 
     @staticmethod
@@ -3857,6 +3908,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 # geometry) switches to the warm raster as one.
                 "bedWidth": float(self.bedMeshMachineWidth or 0.0),
                 "bedDepth": float(self.bedMeshMachineDepth or 0.0)}
+        view["trueThickness"] = bool(surface.view.get("trueThickness"))
         if "lineWidthPx" in surface.view:
             view["lineWidthPx"] = surface.view["lineWidthPx"]
         plot = dict(surface.plot)
@@ -4604,6 +4656,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 "compact": bool(compact),
                 "panX": float(panX), "panY": float(panY),
                 "dpr": min(2.0, max(1.0, float(dpr)))}
+        view["trueThickness"] = self._follower_true_thickness
         if pixelWidth > 0:
             view["lineWidthPx"] = float(pixelWidth)
         # Idempotence compares against the EFFECTIVE value — the

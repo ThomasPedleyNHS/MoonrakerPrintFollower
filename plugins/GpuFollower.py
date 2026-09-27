@@ -97,6 +97,14 @@ def prepare(payloads, cancel=None):
     for role, payload in payloads:
         if not payload:
             continue
+        if role == "current":
+            for event_key, name in (("retractions", "RETRACTION"), ("unretractions", "UNRETRACTION")):
+                marks = payload.get(event_key) or ()
+                if marks:
+                    packed = array("f")
+                    for x, y, _motion in marks:
+                        packed.extend((x, y, x, y))
+                    prepared.append((role, name, tuple(point[2] for point in marks), packed.tobytes()))
         groups = dict(payload.get("classes") or {})
         groups["TRAVEL"] = payload.get("travels") or []
         for name, segments in groups.items():
@@ -129,7 +137,9 @@ def prepare(payloads, cancel=None):
                             return ()
                         time.sleep(0.001)
                         deadline = time.perf_counter() + 0.008
-                prepared.append((role, name, tuple(edge[0] for edge in edges), packed.tobytes()))
+                profile = payload.get("widths") or ()
+                widths = array("f", (max(0.001, profile[int(edge[0])]) if 0 <= int(edge[0]) < len(profile) and profile[int(edge[0])] > 0 else 0.4 for edge in edges))
+                prepared.append((role, name, tuple(edge[0] for edge in edges), packed.tobytes(), widths.tobytes()))
     result = tuple(prepared)
     # Cache keys hold source payloads to prevent id reuse. Account for their
     # retained Python points as well as packed vertices / motion integers.
@@ -140,7 +150,10 @@ def prepare(payloads, cancel=None):
                         for segments in (tuple((payload.get("classes") or {}).values())
                                          + (payload.get("travels") or (),))
                         for segment in segments)
-    charge = sum(len(row[3]) + len(row[2]) * 36 for row in result) + source_points * 192
+    source_points += sum(len(payload.get(key) or ()) for _role, payload in payloads if payload
+                         for key in ("retractions", "unretractions"))
+    profile_bytes = sum(len(payload.get("widths") or ()) * 32 for _role, payload in payloads if payload)
+    charge = profile_bytes + sum(len(row[3]) + (len(row[4]) if len(row) > 4 else 0) + len(row[2]) * 36 for row in result) + source_points * 192
     if (cancel is None or not cancel.is_set()) and charge <= _CACHE_BYTES:
         with _CACHE_LOCK:
             _CACHE[key] = (payloads, result, charge)
@@ -154,7 +167,8 @@ def stroke_geometry(data, width, sx, sy, travel_ratio=0.7, rounded=True, cancel=
     """Expand wide strokes off the render thread; no driver-wide-line reliance."""
     result = []
     deadline = time.perf_counter() + 0.008
-    for role, name, motions, packed in data:
+    for row in data:
+        role, name, motions, packed = row[:4]
         stroke_width = width * travel_ratio if name == "TRAVEL" else width
         points, triangles = array("f"), array("f")
         points.frombytes(packed)
@@ -205,6 +219,50 @@ def stroke_geometry(data, width, sx, sy, travel_ratio=0.7, rounded=True, cancel=
     return tuple(result)
 
 
+def marker_counts(data, progress, total=0):
+    """Completed event prefixes; partial moves must not reveal their events."""
+    completed = max(0, math.floor(progress)) if math.isfinite(progress) else (0 if math.isnan(progress) else float("inf"))
+    # Firmware retracts can sit after the last indexed motion. They appear
+    # at full playback, without requiring a nonexistent extra motion.
+    search = bisect.bisect_right if total > 0 and completed >= total else bisect.bisect_left
+    return tuple((name, search(motions, completed)) for role, name, motions, _raw in data
+                 if role == "current" and name in ("RETRACTION", "UNRETRACTION"))
+
+
+def marker_geometry(data, sx, sy, scale, compact, retractions, unretractions, limits=None):
+    """Small screen-size hollow arrows, at most one of each kind per 12px cell.
+
+    World-aligned cells keep the selection stable during pan; zoom reveals
+    individual events. Glyph geometry is independent of toolpath line width.
+    """
+    if not (retractions or unretractions) or abs(sx) < 1e-9 or abs(sy) < 1e-9:
+        return b""
+    half = (3 if compact else min(8, max(4, 4 * math.sqrt(max(1, scale))))) / 2
+    outline = ((0, -half), (half, 0), (half * .35, 0), (half * .35, half),
+               (-half * .35, half), (-half * .35, 0), (-half, 0), (0, -half))
+    vertices = array("f")
+    cells = set()
+    limits = dict(limits) if limits is not None else None
+    for role, name, _motions, raw in data:
+        enabled = retractions if name == "RETRACTION" else unretractions if name == "UNRETRACTION" else False
+        if role != "current" or not enabled:
+            continue
+        points = array("f")
+        points.frombytes(raw)
+        direction = 1 if name == "RETRACTION" else -1
+        count = limits.get(name, 0) if limits is not None else len(points) // 4
+        for i in range(0, min(len(points), count * 4), 4):
+            x, y = points[i], points[i + 1]
+            cell = (name, math.floor(x * abs(sx) / 12), math.floor(y * abs(sy) / 12))
+            if cell in cells:
+                continue
+            cells.add(cell)
+            for a, b in zip(outline, outline[1:], strict=False):
+                vertices.extend((x + a[0] / sx, y - direction * a[1] / sy,
+                                 x + b[0] / sx, y - direction * b[1] / sy))
+    return vertices.tobytes()
+
+
 class GpuFollower(QQuickItem):
     layersChanged = pyqtSignal()
     settingsChanged = pyqtSignal()
@@ -240,7 +298,7 @@ class GpuFollower(QQuickItem):
         motion = math.floor(progress)
         endpoint = None
         for role, _name, motions, packed in self._data:
-            if role != "current":
+            if role != "current" or _name in ("RETRACTION", "UNRETRACTION"):
                 continue
             lo, hi = bisect.bisect_left(motions, motion), bisect.bisect_right(motions, motion)
             if lo < hi:
@@ -401,7 +459,11 @@ class GpuFollower(QQuickItem):
             node._groups = []
             node._grid_nodes = []
             node._grid_key = None
+            node._marker_nodes = []
+            node._marker_key = None
             for role, name, motions, data in self._data:
+                if name in ("RETRACTION", "UNRETRACTION"):
+                    continue
                 pair = []
                 for pending in (True, False):
                     colour = QColor("#888888" if pending and role == "current" else COLOURS.get(name, "#888888"))
@@ -424,6 +486,27 @@ class GpuFollower(QQuickItem):
                 sip.delete(child)
             node._grid_nodes = self._grid(node, key)
             node._grid_key = key
+        split = settings.get("split")
+        split = float("inf") if split is None else split
+        display_split = settings.get("displaySplit", split)
+        display_split = split if display_split is None else display_split
+        marker_split = settings.get("markerSplit", display_split)
+        limits = marker_counts(self._data, float("inf") if marker_split is None else marker_split,
+                               settings.get("motionCount", 0))
+        marker_key = (sx, sy, scale, bool(settings.get("compact")),
+                      bool(settings.get("showRetractions")), bool(settings.get("showUnretractions")),
+                      limits,
+                      QColor(settings.get("markerInk", "#aaaaaa")).rgba())
+        if node._marker_key != marker_key:
+            for child in node._marker_nodes:
+                sip.delete(child)
+            edges = marker_geometry(self._data, *marker_key[:7])
+            node._marker_nodes = []
+            if edges:
+                child = self._node(node, QColor.fromRgba(marker_key[-1]))
+                self._vertices(child, edges, len(edges) // 8, 1)
+                node._marker_nodes.append(child)
+            node._marker_key = marker_key
         matrix = QMatrix4x4()
         matrix.translate(
             bed.get("offsetX", 0) * scale + settings.get("panX", 0) - bed.get("bedXMin", 0) * sx,
@@ -431,10 +514,6 @@ class GpuFollower(QQuickItem):
         )
         matrix.scale(sx, -sy)
         node.setMatrix(matrix)
-        split = settings.get("split")
-        split = float("inf") if split is None else split
-        display_split = settings.get("displaySplit", split)
-        display_split = split if display_split is None else display_split
         for role, name, motions, data, base, printed in node._groups:
             enabled = role == "current" or bool(settings.get("showPrevious" if role == "prev" else "showNext"))
             if name == "TRAVEL":
@@ -460,8 +539,12 @@ class GpuFollower(QQuickItem):
                     child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)
                 material.viewport = (self.window().width(), self.window().height())
                 width = settings.get("lineWidth", 1) * (settings.get("travelRatio", 0.7) if name == "TRAVEL" else 1)
+                physical = bool(settings.get("trueThickness")) and name != "TRAVEL"
+                if physical:
+                    width = abs(sx)
                 aa = bool(settings.get("antialiasing"))
-                if material.width != width or material.aa != aa:
+                if material.width != width or material.aa != aa or material.physical != physical:
+                    material.physical = physical
                     material.width = width
                     material.aa = aa
                     child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)

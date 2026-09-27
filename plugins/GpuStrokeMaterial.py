@@ -29,7 +29,7 @@ class FollowerStrokeShader(QSGMaterialShader):
                 new.viewport[1] * state.devicePixelRatio() / 2,
                 float(new.aa),
             ]
-            + [float(new.rounded), new.split, float(new.clip), 0]
+            + [float(new.rounded), new.split, float(new.clip), float(new.physical)]
         )
         data = struct.pack("<28f", *values)
         state.uniformData().replace(0, len(data), data)
@@ -46,6 +46,7 @@ class FollowerStrokeMaterial(QSGMaterial):
         self.viewport = (556, 556)
         self.split = 0.0
         self.clip = False
+        self.physical = False
         self.setFlag(self.Flag.Blending, True)
         self.setFlag(self.Flag.RequiresFullMatrix, True)
 
@@ -53,8 +54,8 @@ class FollowerStrokeMaterial(QSGMaterial):
         return TYPE
 
     def compare(self, other):
-        a = (self.colour.rgba(), self.width, self.aa, self.rounded, self.viewport, self.split, self.clip)
-        b = (other.colour.rgba(), other.width, other.aa, other.rounded, other.viewport, other.split, other.clip)
+        a = (self.colour.rgba(), self.width, self.aa, self.rounded, self.viewport, self.split, self.clip, self.physical)
+        b = (other.colour.rgba(), other.width, other.aa, other.rounded, other.viewport, other.split, other.clip, other.physical)
         return (a > b) - (a < b)
 
     def createShader(self, mode):
@@ -81,7 +82,11 @@ def pack_shader(data, cancel=None):
         return _pack_stdlib(data, cancel)
     result = []
     corners = np.array([[-1, 1], [-1, -1], [1, 1], [1, 1], [-1, -1], [1, -1]], dtype=np.float32)
-    for role, name, motions, packed in data:
+    for row in data:
+        role, name, motions, packed = row[:4]
+        if name in ("RETRACTION", "UNRETRACTION"):
+            result.append((role, name, motions, packed))
+            continue
         if cancel is not None and cancel.is_set():
             return ()
         points = np.frombuffer(packed, dtype=np.float32).reshape(-1, 4)
@@ -90,6 +95,8 @@ def pack_shader(data, cancel=None):
             vertices[:, i, :2] = points[:, :2] if corner[0] < 0 else points[:, 2:]
         vertices[:, :, 2:4] = (points[:, 2:] - points[:, :2])[:, None, :]
         vertices[:, :, 4:6] = corners[None, :, :]
+        if len(row) > 4:
+            vertices[:, :, 4] *= np.frombuffer(row[4], dtype=np.float32)[:, None]
         motion = np.asarray(motions, dtype=np.float32)
         starts = np.zeros(len(points), dtype=np.float32)
         spans = np.ones(len(points), dtype=np.float32)
@@ -112,7 +119,14 @@ def _pack_stdlib(data, cancel=None):
     """Development fallback; Cura itself supplies NumPy."""
     result = []
     corners = ((-1, 1), (-1, -1), (1, 1), (1, 1), (-1, -1), (1, -1))
-    for role, name, motions, packed in data:
+    for row in data:
+        role, name, motions, packed = row[:4]
+        if name in ("RETRACTION", "UNRETRACTION"):
+            result.append((role, name, motions, packed))
+            continue
+        widths = array("f")
+        if len(row) > 4:
+            widths.frombytes(row[4])
         points, vertices = array("f"), array("f")
         points.frombytes(packed)
         ranges = []
@@ -133,6 +147,6 @@ def _pack_stdlib(data, cancel=None):
                 return ()
             x, y, ex, ey = points[offset : offset + 4]
             for cx, cy in corners:
-                vertices.extend((x if cx < 0 else ex, y if cx < 0 else ey, ex - x, ey - y, cx, cy, *ranges[offset // 4]))
+                vertices.extend((x if cx < 0 else ex, y if cx < 0 else ey, ex - x, ey - y, cx * (widths[offset // 4] if widths else 1.0), cy, *ranges[offset // 4]))
         result.append((role, name, motions, vertices.tobytes()))
     return tuple(result)
