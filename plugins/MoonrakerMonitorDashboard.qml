@@ -855,7 +855,7 @@ Component {
                         id: controlScrollbar
                     }
 
-                    ColumnLayout {
+                    Column {
                         id: controlContent
                         objectName: "moonrakerControlsContent"
                         // The stored order applies HERE — before the
@@ -877,46 +877,49 @@ Component {
                         // Spacing lives on the children, not the layout: a
                         // collapsed section's hidden content must contribute
                         // nothing, so stacked headers sit flush like Cura's.
+                        // Sections own their implicit heights. A positioner
+                        // stacks them without a second layout solver feeding
+                        // changing row heights back through the whole pane.
                         spacing: 0
                         FileManagerSection {
                             id: fileManagerSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["fileManager"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
 
                         PrintSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["print"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             onCancelRequested: cancelPrintDialog.open()
                         }
 
                         SetupSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["setup"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                         ToolheadSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["toolhead"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
 
                         MacrosSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["macros"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                         ProfilesSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["profiles"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                         TuningSection {
                             id: tuningSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["tuning"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             interactionSink: root.receiveSliderInteraction
                         }
@@ -924,7 +927,7 @@ Component {
                         FansSection {
                             id: fansSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["fans"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenFanItems
@@ -935,7 +938,7 @@ Component {
                         LedsSection {
                             id: ledsSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["leds"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenLedItems
@@ -946,7 +949,7 @@ Component {
                         PwmSection {
                             id: pwmSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["pwm"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenPwmOutputItems
@@ -957,7 +960,7 @@ Component {
                         PowerSection {
                             id: powerSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["power"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                             onPowerOffConfirmRequested: function (deviceName) {
                                 powerOffDialog.deviceName = deviceName;
@@ -968,13 +971,13 @@ Component {
                         SystemSection {
                             id: systemSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["system"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                         SaveSection {
                             id: saveSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["save"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                     }

@@ -857,3 +857,9 @@ logs are a failure, not a clean verdict. Keep this module beside the staged
 runner. First-install and migration journeys must retain and check both boots.
 Normal pre-telemetry startup is not a warning; optional layer diagnostics own
 that debug message. Do not suppress a warning merely to turn a journey green.
+
+The shared harness log gate also checks fault-injection evidence: an exact expected
+warning is allowed only after its scenario passes every step, and only for the
+declared count. Repeated authentication refusals use the verified scenario's
+recorded start/end time instead. Neither allowance exempts unrelated warnings,
+errors or critical tracebacks.

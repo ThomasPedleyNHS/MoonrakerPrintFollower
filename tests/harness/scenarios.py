@@ -1397,6 +1397,7 @@ SCENARIOS = [
          {"op": "sim_ledger", "needle": "objects/query", "field": "path", "min": 1, "budget": 30},
      ]},
     {"id": "a6", "group": "connection", "name": "a 401 surfaces the key-rejection verdict",
+     "expected_log_patterns": [r"MoonrakerHTTP (?:GET|POST) (?:core|monitor)::[a-z-]+ failed: unauthorized"],
      "steps": [
          {"op": "sim_arm", "arms": {"require_api_key": True}},
          {"op": "sim_klippy"},
@@ -1419,6 +1420,7 @@ SCENARIOS = [
          {"op": "wait_model", "prop": "monitorConnected", "value": True, "budget": 120},
      ]},
     {"id": "a9", "group": "connection", "name": "disconnected disables every control",
+     "expected_log_patterns": [r"MoonrakerHTTP (?:GET|POST) (?:core|monitor)::[a-z-]+ failed: unauthorized"],
      "steps": [
          {"op": "sim_arm", "arms": {"refuse_subscribe": "down", "require_api_key": True}},
          {"op": "sim_klippy"},
@@ -2576,6 +2578,7 @@ SCENARIOS = [
          {"op": "wait_exec", "code": P_ROW_PASSED, "contains": '"passed": true', "budget": 20},
      ]},
     {"id": "p7", "group": "preview",
+     "expected_log_messages": ["MoonrakerHTTP POST pause::scheduled failed: simulated PAUSE refusal"],
      "version_skip": {"5.11": "the refused-pause flow shares p6\u2019s selected-layer targeting premise \u2014 5.12+ only"},
      "name": "a refused PAUSE keeps the entry restyled as not taken",
      "steps": [

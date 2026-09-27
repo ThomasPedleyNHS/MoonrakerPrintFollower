@@ -1119,7 +1119,7 @@ a diagnostic instead of silently leaving a layer pending.
 
 Native and Linux harnesses use `tests/harness/log_gate.py` to reject plugin
 warnings, errors and QML binding/polish loops. Native first-install and migration
-legs include both boots' logs. Missing evidence fails the gate.
+legs include both boots' logs. Missing evidence fails the gate. Deliberate fault-injection scenarios may declare exact expected log messages; only a fully passing scenario records that allowance, and the shared gate consumes its bounded message count. Repeated authentication-refusal warnings are permitted only inside the successful authentication-fault scenario's recorded time window. Other warnings still fail.
 
 ### Object-outline retention
 

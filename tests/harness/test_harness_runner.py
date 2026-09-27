@@ -556,8 +556,51 @@ class HarvestCuraLogTests(unittest.TestCase):
             "WARNING file:///plugins/MoonrakerPrintFollower/PlateProgressFace.qml: Layout polish loop detected",
             "QML PlateProgressFace.qml: TypeError: Cannot read property",
             "ERROR MoonrakerPrintFollower: preparation failed",
+            "CRITICAL Cura.CrashHandler: File /plugins/MoonrakerPrintFollower/FileManager.py line 123",
         ))
-        self.assertEqual([number for number, _line in plugin_log_noise(text)], [5, 6, 7])
+        self.assertEqual([number for number, _line in plugin_log_noise(text)], [5, 6, 7, 8])
+
+    def test_only_a_successful_fault_scenario_can_explain_one_exact_warning(self):
+        from log_gate import check_logs, completed_fault_messages
+        message = "MoonrakerHTTP POST pause::scheduled failed: simulated PAUSE refusal"
+        spec = {"expected_log_messages": [message]}
+        passed = [("p7", "action", "assertion", True, None)]
+        self.assertEqual(completed_fault_messages(spec, passed), [message])
+        self.assertEqual(completed_fault_messages(spec, []), [])
+        self.assertEqual(completed_fault_messages(spec, passed + [
+            ("p7-failure", "action", "assertion", False, None)]), [])
+        evidence = self.dest / "evidence.json"
+        evidence.write_text(json.dumps({"expected_log_messages": [message]}), encoding="utf-8")
+        log = self.dest / "cura.log"
+        warning = "WARNING - [MainThread] MoonrakerPrintFollower.MoonrakerTransport._finish_json [333]: " + message
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            log.write_text(warning, encoding="utf-8")
+            self.assertEqual(check_logs([log]), 1)
+            self.assertEqual(check_logs([log], evidence), 0)
+            log.write_text(warning + "\n" + warning, encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
+            log.write_text(warning + "\nWARNING MoonrakerPrintFollower: unexpected failure", encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
+            log.write_text(warning.replace("WARNING", "ERROR"), encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
+
+    def test_auth_fault_warnings_are_confined_to_the_verified_scenario_window(self):
+        from datetime import datetime
+        from log_gate import check_logs
+        stamp = datetime(2026, 9, 27, 12, 0, 0).timestamp()
+        evidence = self.dest / "evidence.json"
+        evidence.write_text(json.dumps({"expected_log_windows": [{
+            "start": stamp - 1, "end": stamp + 1,
+            "pattern": r"MoonrakerHTTP GET core::status failed: unauthorized"}]}), encoding="utf-8")
+        log = self.dest / "cura.log"
+        warning = "2026-09-27 12:00:00,000 - WARNING - [MainThread] MoonrakerPrintFollower.MoonrakerTransport._finish_json [333]: MoonrakerHTTP GET core::status failed: unauthorized"
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            log.write_text(warning, encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 0)
+            log.write_text(warning.replace("12:00:00", "12:00:02"), encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
+            log.write_text(warning.replace("unauthorized", "disconnected"), encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
 
     def test_log_gate_checks_both_boots_and_fails_without_evidence(self):
         from log_gate import check_logs

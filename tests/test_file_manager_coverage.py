@@ -1038,6 +1038,13 @@ class ThumbnailTests(ServiceCase):
         reply._body = b"5678"
         self.assertEqual(self.service._take_reply_body(reply, 8), b"12345678")
 
+    def test_closed_reply_read_preserves_the_already_received_error_body(self):
+        reply = ScriptedReply(body=b'{"error":"refused"}')
+        self.service._watch_reply_body(reply, 64)
+        reply.readyRead.emit()
+        reply.read = lambda _limit: None
+        self.assertEqual(self.service._take_reply_body(reply, 64), b'{"error":"refused"}')
+
     def thumb_row(self, name="a.gcode"):
         return FileRow(filename=name, relpath=name, thumb_path=".thumbs/a-300x300.png",
                        thumb_small=".thumbs/a-32x32.png")
@@ -1229,6 +1236,10 @@ class UploadTests(ServiceCase):
             reply = self.reply_for(ScriptedReply(
                 body=body, error=QNetworkReply.NetworkError.InternalServerError))
             self.assertTrue(self.service.upload_file(self.upload_source()))
+            reply.readyRead.emit()
+            # Cura Qt 6.6 reports no remaining readable bytes as None
+            # after an HTTP error has closed the reply.
+            reply.read = lambda _limit: None
             reply.finished.emit()
             self.assertEqual(verdicts[-1], (False, expected))
             self.assertEqual(reply.disposed, 1)

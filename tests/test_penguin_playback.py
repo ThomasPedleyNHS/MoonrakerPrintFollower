@@ -56,8 +56,14 @@ class PenguinTimelineTests(unittest.TestCase):
         printer.scenario(gcode_fixture="penguin")
         printer.state["print_stats"]["state"] = "printing"
         printer.scenario(gcode_playback_s=20)
+        from plugins.MoonrakerProtocol import live_position_in_gcode_space
         for _ in range(80):
             printer.push_patch()
+            self.assertEqual(
+                live_position_in_gcode_space(printer.state["motion_report"],
+                                             printer.state["gcode_move"]),
+                tuple(printer.state["motion_report"]["live_position"][:3]),
+                "the zero-origin simulator advertised a spurious G92 offset")
         sample = playback_sample(self.rows, 1)
         self.assertEqual(printer.state["print_stats"]["info"]["current_layer"], 3)
         self.assertEqual(printer.state["motion_report"]["live_position"], sample["end"])

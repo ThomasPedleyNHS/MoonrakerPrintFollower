@@ -872,7 +872,9 @@ class FileManager(QObject):
             return
         body = getattr(reply, "_mpf_body", bytearray())
         reply._mpf_body = body
-        body.extend(bytes(reply.read(limit - len(body) + 1)))
+        # Qt 6.6 returns None when an errored/closed reply has no more
+        # readable bytes. Keep any body already drained by readyRead.
+        body.extend(bytes(reply.read(limit - len(body) + 1) or b""))
         if len(body) > limit:
             reply._mpf_body_overflow = True
             body.clear()

@@ -2141,7 +2141,7 @@ Component {
                         id: statusScrollbar
                     }
 
-                    ColumnLayout {
+                    Column {
                         id: statusContent
                         objectName: "moonrakerStatusContent"
                         // The stored order applies HERE — the column's
@@ -2160,36 +2160,39 @@ Component {
                         width: statusFlick.width - 14
                         // Spacing lives on the children: collapsed sections
                         // must contribute nothing so headers stack flush.
+                        // Sections own their implicit heights. A positioner
+                        // stacks them without a second layout solver feeding
+                        // changing row heights back through the whole pane.
                         spacing: 0
                         JobSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["job"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
 
                         TempsSection {
-                            Layout.fillWidth: true
+                            width: parent.width
                             visible: root.printer != null && root.printer.temperatureItems.length > 0 && root.printer.sectionHiddenMap["temps"] !== true
                             printerModel: root.printer
                         }
 
                         FansInfoSection {
-                            Layout.fillWidth: true
+                            width: parent.width
                             visible: root.printer != null && root.printer.fanItems.length > 0 && root.printer.sectionHiddenMap["fansinfo"] !== true
                             printerModel: root.printer
                         }
                         FilamentSection {
-                            Layout.fillWidth: true
+                            width: parent.width
                             visible: root.printer != null && root.printer.filamentSensorItems.length > 0 && root.printer.sectionHiddenMap["filament"] !== true
                             printerModel: root.printer
                         }
                         SystemInfoSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["systeminfo"] !== true
-                            Layout.fillWidth: true
+                            width: parent.width
                             printerModel: root.printer
                         }
                         McusSection {
-                            Layout.fillWidth: true
+                            width: parent.width
                             visible: root.printer != null && root.printer.mcuItems.length > 0 && root.printer.sectionHiddenMap["mcus"] !== true
                             printerModel: root.printer
                         }

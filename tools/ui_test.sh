@@ -88,7 +88,7 @@ scan_cura_log() {
     # Every boot's log (the first-install leg boots twice and the
     # second launch truncates the log file): a first boot's warning
     # must not go unseen because a later boot overwrote the file.
-    python3 "$root/tests/harness/log_gate.py" "$WORK_DIR"/cura_run*.log
+    python3 "$root/tests/harness/log_gate.py" --evidence "$RUN_DIR/evidence.json" "$WORK_DIR"/cura_run*.log
 }
 # The deterministic scratch root. Everything a run needs lives
 # under it and is CREATED here, never assumed — /tmp does not

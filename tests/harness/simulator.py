@@ -434,6 +434,10 @@ class PrinterState:
         self.state["virtual_sdcard"].update(file_size=len(self.gcode_bytes),
                                            file_position=row["offset"],
                                            progress=row["offset"] / len(self.gcode_bytes))
+        # This fixture has no G92 origin shift. Klipper publishes both
+        # commanded coordinate spaces together; a stale machine position
+        # would falsely advertise an origin offset to the real follower.
+        self.state["gcode_move"]["position"] = list(position)
         self.state["gcode_move"]["gcode_position"] = list(position)
         self.state["motion_report"]["live_position"] = list(position)
         # Position and velocity describe the same commanded segment. Leaving

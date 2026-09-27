@@ -42,7 +42,11 @@ class StatusColumnGeometryTests(harness.StatusColumnGeometryTests):
             flick = self.find(monitor, "moonrakerStatusFlick")
             content = self.find(monitor, "moonrakerStatusContent")
             self.assertAlmostEqual(content.width(), flick.width() - 14, delta=0.5)
-            self.assertLess(content.width(), content.property("implicitWidth"))
+            # A positioner derives implicitWidth from its explicitly sized
+            # children; the contract is that none escape the viewport.
+            for section in content.childItems():
+                if section.width() > 0:
+                    self.assertAlmostEqual(section.width(), content.width(), delta=0.5)
 
 
 class ConsoleInputRowTests(harness.ConsoleInputRowTests):
@@ -265,3 +269,81 @@ class TuningResetConvergenceTests(harness.TuningResetConvergenceTests):
 
 
 
+
+class DynamicPaneStackTests(harness.RealEngineTestCase):
+    def test_section_visibility_and_height_changes_settle_without_layout_feedback(self):
+        dashboard, window = self.mount_window("MoonrakerMonitorDashboard.qml", 1840, 900)
+        self._pump_ms(100)
+        columns = [self.find(dashboard, name) for name in
+                   ("moonrakerStatusContent", "moonrakerControlsContent")]
+        start = len(harness._APPLICATION["messages"])
+        for column in columns:
+            sections = [child for child in column.childItems() if child.width() > 0]
+            for section in sections:
+                section.setVisible(False)
+                self._pump_ms(20)
+                section.setVisible(True)
+                self._pump_ms(20)
+                self.assertAlmostEqual(section.width(), column.width(), delta=0.5)
+            self._pump_ms(50)
+            shown = sorted((child for child in sections if child.isVisible()), key=lambda child: child.y())
+            for previous, following in zip(shown, shown[1:], strict=False):
+                self.assertGreaterEqual(following.y() + .5, previous.y() + previous.height())
+        self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
+                          if "polish loop" in line.lower() or "binding loop" in line.lower()])
+
+
+class FileManagerOpenBindingTests(harness.RealEngineTestCase):
+    def test_fetch_publish_does_not_reenter_the_open_binding(self):
+        from tools.capture_filemanager import FileManagerModelStub
+
+        class PublishingModel(FileManagerModelStub):
+            fileManagerChanged = harness.pyqtSignal()
+
+            def __init__(self):
+                super().__init__()
+                self.opened = False
+                self.fetches = 0
+
+            @harness.pyqtProperty(bool, notify=fileManagerChanged)
+            def fileManagerOpen(self):
+                return self.opened
+
+            @harness.pyqtSlot()
+            def openFileManager(self):
+                self.fetches += 1
+                self.fileManagerChanged.emit()
+
+            def publish(self, opened):
+                self.opened = opened
+                self.fileManagerChanged.emit()
+
+        model = PublishingModel()
+        context = self.engine.rootContext()
+        context.setContextProperty("openingPrinter", model)
+        self.addCleanup(context.setContextProperty, "openingPrinter", None)
+        component = harness.QQmlComponent(self.engine)
+        component.setData(b"import QtQuick 2.15; Item { width: 900; height: 600; "
+                          b"property bool fileManagerOpen: openingPrinter.fileManagerOpen; "
+                          b"FileManager { anchors.fill: parent; open: parent.fileManagerOpen; "
+                          b"printerModel: openingPrinter } }",
+                          harness.QUrl.fromLocalFile(str(harness.ROOT / "plugins" / "OpenProbe.qml")))
+        document = component.create()
+        self.assertIsNotNone(document, harness.qml_error_report(component))
+        window = harness.QQuickWindow()
+        window.resize(900, 600)
+        document.setParentItem(window.contentItem())
+        self.addCleanup(self._destroy_window, document, window)
+        window.show()
+        self.pump(30)
+        start = len(harness._APPLICATION["messages"])
+        model.publish(True)
+        self._pump_ms(50)
+        self.assertEqual(model.fetches, 1)
+        model.publish(False)
+        self._pump_ms(30)
+        model.publish(True)
+        self._pump_ms(50)
+        self.assertEqual(model.fetches, 2)
+        self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
+                          if "binding loop" in line.lower()])

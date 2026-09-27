@@ -51,7 +51,14 @@ Item {
     // dashboard only sets `open`.
     onOpenChanged: {
         if (open && root.printerModel != null) {
-            root.printerModel.openFileManager();
+            // Fetching republishes fileManagerChanged, the same signal
+            // that drives open. Finish this binding evaluation first.
+            var model = root.printerModel;
+            Qt.callLater(function () {
+                if (root.open && root.printerModel === model) {
+                    model.openFileManager();
+                }
+            });
         }
         if (!open) {
             // The columns popup lives in the window's overlay, so

@@ -36,7 +36,7 @@ import time
 # chosen.
 import native_host
 from pathlib import Path
-from log_gate import check_logs
+from log_gate import check_logs, completed_fault_messages
 from window_geometry import verified_geometry
 
 DISPLAY = os.environ.get("HARNESS_DISPLAY", ":99")
@@ -689,6 +689,8 @@ def _verdict(steps):
 # filled by the driver machinery as it lands; schema 1 ships with
 # them null rather than absent.
 EVIDENCE = []
+EXPECTED_LOG_MESSAGES = []
+EXPECTED_LOG_WINDOWS = []
 
 # The presentation record (the static-green ruling): what the window
 # was asked to present at each end of a scenario, and whether a frame
@@ -1189,6 +1191,8 @@ def write_evidence(title):
             "judged": CAPTURE,
         },
         "steps": EVIDENCE,
+        "expected_log_messages": EXPECTED_LOG_MESSAGES,
+        "expected_log_windows": EXPECTED_LOG_WINDOWS,
     }
     if FRAME_PROBES:
         run["frames"] = FRAME_PROBES
@@ -3480,6 +3484,7 @@ def suite_run(group_id):
 
 
 def suite_scenario(spec, step_fn=None):
+    wall_started = time.time()
     # Resolved lazily: suite_step is defined below this function.
     if step_fn is None:
         step_fn = suite_step
@@ -3573,6 +3578,10 @@ def suite_scenario(spec, step_fn=None):
         EVIDENCE.append(_evidence_entry(spec, -4, {"op": "frames_probe"}, name,
                                         False, action, assertion, capture,
                                         time.monotonic()))
+    EXPECTED_LOG_MESSAGES.extend(completed_fault_messages(spec, steps))
+    if steps and all(step[3] for step in steps):
+        EXPECTED_LOG_WINDOWS.extend({"pattern": pattern, "start": wall_started, "end": time.time()}
+                                    for pattern in spec.get("expected_log_patterns", ()))
     return steps
 
 # ─── Real-printer read-only mode (TESTING.md §2.5) ───────────────
@@ -4802,5 +4811,5 @@ if __name__ == "__main__":
     # a failed leg are the ones whose verdicts get read afterwards, and
     # an `or` here would leave exactly those legs without the record.
     _static_rc = static_leg_report(RUN_DIR)
-    _log_rc = check_logs(sorted(Path(RUN_DIR).glob("cura.log*"))) if os.environ.get("HARNESS_CURA_CONFIG") else 0
+    _log_rc = check_logs(sorted(Path(RUN_DIR).glob("cura.log*")), Path(RUN_DIR) / "evidence.json") if os.environ.get("HARNESS_CURA_CONFIG") else 0
     sys.exit(_rc or _static_rc or _log_rc)
