@@ -3086,7 +3086,7 @@ class PlateCanvasHitTests(RealEngineTestCase):
                           b"function onPositionChanged(mouse) { delivery.received(mouse.x, mouse.y) } }", QUrl())
         connection = component.create(context)
         self.assertIsNotNone(connection, qml_error_report(component))
-        def delivered_move(point):
+        def delivered_move(point, entering=False):
             first = len(delivery.moves)
             QTest.mouseMove(window, point)
             local = area.mapFromScene(QPointF(point))
@@ -3095,6 +3095,9 @@ class PlateCanvasHitTests(RealEngineTestCase):
                 # An earlier matching event is not evidence that the pointer
                 # still occupies it: native cursor warps can deliver another
                 # move in the same event-loop turn.
+                if entering and area.property("containsMouse"):
+                    return (abs(area.property("mouseX") - local.x()) < 0.75
+                            and abs(area.property("mouseY") - local.y()) < 0.75)
                 if len(delivery.moves) <= first:
                     return False
                 x, y = delivery.moves[-1]
@@ -3107,13 +3110,16 @@ class PlateCanvasHitTests(RealEngineTestCase):
             self.assertTrue(received(), "hover positionChanged was not delivered: %s -> %s" %
                             (delivery.moves[first:], (local.x(), local.y())))
 
-        # Observe the off-point event before submitting the target. Otherwise
+        # Establish the off-point before submitting the target. Otherwise
         # an old target coordinate can satisfy the waiter while the off-point
         # signal still owns hoveredName; queued native moves then race it.
         off_x = scene_x + (8.0 if scene_x + 8.0 < canvas.width() - 1 else -8.0)
         off_y = scene_y + (8.0 if scene_y + 8.0 < canvas.height() - 1 else -8.0)
         try:
-            delivered_move(canvas.mapToScene(QPointF(off_x, off_y)).toPoint())
+            # Qt 6.6 updates coordinates on entry without emitting
+            # positionChanged. The off-point only establishes the pointer;
+            # the target must still deliver the actual hover handler.
+            delivered_move(canvas.mapToScene(QPointF(off_x, off_y)).toPoint(), entering=True)
             delivered_move(canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint())
         finally:
             from PyQt6 import sip

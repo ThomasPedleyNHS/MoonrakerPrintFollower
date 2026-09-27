@@ -7,7 +7,7 @@ import Cura 1.1 as Cura
 // download with the hourglass glyph, the progress bar, the integer
 // percentage and the stage label — one component, both cards (the
 // live request: the picker offers the same download as the follower).
-ColumnLayout {
+Column {
     id: root
     Layout.fillWidth: true
     property var printerModel: null
@@ -30,14 +30,16 @@ ColumnLayout {
     // The WHOLE row clicks (the live request): the label and the glyph
     // are the same offer, not two targets. A layout-managed item may
     // not be anchored, so a plain Item hosts both the anchored
-    // MouseArea and the RowLayout that lays the row out.
+    // MouseArea and the explicitly sized Row that lays the row out.
+    // Width flows down and implicit height flows up: no nested layout
+    // solver can feed a wrapping label back into its own width.
     Item {
         id: instructionRow
         visible: !root.indexReady
-        Layout.fillWidth: true
-        implicitHeight: instructionRowContent.implicitHeight
+        width: root.width
+        height: instructionRowContent.implicitHeight
 
-        RowLayout {
+        Row {
             id: instructionRowContent
             width: Math.min(parent.width, 16 * screenScaleFactor + spacing + instructionMetrics.advanceWidth)
             anchors.horizontalCenter: parent.horizontalCenter
@@ -86,7 +88,7 @@ ColumnLayout {
             }
             UM.Label {
                 id: instructionLabel
-                Layout.fillWidth: true
+                width: Math.max(0, instructionRowContent.width - 16 * screenScaleFactor - instructionRowContent.spacing)
                 text: root.busy() ? "Downloading and indexing the print…" : root.idleInstruction
                 color: UM.Theme.getColor("text_inactive")
                 font: UM.Theme.getFont("small")
@@ -114,7 +116,7 @@ ColumnLayout {
     }
 
     UM.Label {
-        Layout.fillWidth: true
+        width: root.width
         visible: root.indexReady
         text: "Print indexed — waiting for print movements."
         color: UM.Theme.getColor("text_inactive")
@@ -123,16 +125,18 @@ ColumnLayout {
         horizontalAlignment: root.textAlignment
     }
 
-    RowLayout {
+    Row {
+        id: progressRow
         objectName: "plateDownloadProgressRow"
-        Layout.alignment: Qt.AlignHCenter
-        Layout.preferredWidth: Math.min(root.width, 320 * screenScaleFactor)
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(root.width, 320 * screenScaleFactor)
         opacity: root.busy() ? 1 : 0
         spacing: UM.Theme.getSize("narrow_margin").width
 
         Item {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 8 * screenScaleFactor
+            width: Math.max(0, progressRow.width - percentage.width - phase.width - 2 * progressRow.spacing)
+            height: 8 * screenScaleFactor
+            anchors.verticalCenter: parent.verticalCenter
             clip: true
             property real sweepPhase: 0
             NumberAnimation on sweepPhase {
@@ -162,6 +166,8 @@ ColumnLayout {
         }
 
         UM.Label {
+            id: percentage
+            anchors.verticalCenter: parent.verticalCenter
             // The integer percentage beside the bar (the live request).
             text: root.percentText()
             color: UM.Theme.getColor("text")
@@ -169,6 +175,8 @@ ColumnLayout {
         }
 
         UM.Label {
+            id: phase
+            anchors.verticalCenter: parent.verticalCenter
             // The stage label (the live request).
             text: root.busy() && root.printerModel != null ? root.printerModel.improveEtaPhase : ""
             color: UM.Theme.getColor("text_inactive")
