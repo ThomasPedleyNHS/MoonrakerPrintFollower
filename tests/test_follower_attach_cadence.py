@@ -91,7 +91,11 @@ class AttachCadenceTests(harness.AttachCadenceTests):
             for poll in range(self.POLLS):
                 self._poll(model, surface, payload, 5, 20 + poll * 14,
                            clock, armed, self.qt)
-        self._drain_job(model, surface, self.qt)
+            # A worker may still be completing the last failed bake.
+            # Drain before restoring the renderer and advancing the fake
+            # clock: a late failure otherwise arms a retry AFTER that
+            # advance, which no amount of real event pumping can expire.
+            self._drain_job(model, surface, self.qt)
         self.assertEqual(surface.nav["url"], "", "a failed render promoted")
         self.assertLessEqual(len(starts["nav"]),
                              self.POLLS * self.POLL_S / 3.0 + 2,

@@ -41,6 +41,18 @@ class RendererParityTests(_parent.RealEngineTestCase):
     _matches = staticmethod(_parent.PlateFaceRenderTests._matches)
     _native_layer = _parent.PlateFaceRenderTests._native_layer
 
+    def _hold_navigation_fixture(self, face):
+        # These fixtures measure a held image, not the handover back to
+        # the live scene. A manually started interaction has no mouse
+        # grab, so its ordinary 150 ms settle can expire during a slower
+        # host's census. Keep it pending for the fixture's lifetime;
+        # the picture waits themselves still cap at 15 s.
+        from PyQt6.QtQml import QQmlEngine, QQmlExpression
+        expression = QQmlExpression(QQmlEngine.contextForObject(face), face,
+                                   "settleTimer.interval = 60000")
+        expression.evaluate()
+        self.assertFalse(expression.hasError(), expression.error().toString())
+
     def test_the_navigation_raster_paints_the_physical_stroke(self):
         """The paint pin: the nav raster's stroke is the PHYSICAL
         width at the backing grid — nominal x plot scale x lineScale
@@ -109,6 +121,7 @@ class RendererParityTests(_parent.RealEngineTestCase):
         # 400% presentation (the source's 4x backing shows 1:1).
         fx = float(plot["offsetX"]) + (125.0 - float(plot["bedXMin"])) * sx
         fy = float(plot["offsetY"]) + (float(plot["bedYMax"]) - 125.0) * sx
+        self._hold_navigation_fixture(face)
         face.setProperty("viewScale", 4.0)
         face.setProperty("viewPanX", 0.0)
         face.setProperty("viewPanY", 0.0)
@@ -219,6 +232,7 @@ class RendererParityTests(_parent.RealEngineTestCase):
         sx = float(plot["sx"])
         fx = float(plot["offsetX"]) + (125.0 - float(plot["bedXMin"])) * sx
         fy = float(plot["offsetY"]) + (float(plot["bedYMax"]) - 125.0) * sx
+        self._hold_navigation_fixture(face)
         face.setProperty("viewScale", 4.0)
         face.setProperty("displayScale", 4.0)
         face.setProperty("_interactionActive", True)
@@ -299,10 +313,14 @@ class RendererParityTests(_parent.RealEngineTestCase):
 
         pan_a = 300 - (ox + 4.0 * fx)
         first = painted(grab(pan_a), pan_a)
+        self.assertTrue(face.property("_interactionActive"),
+                        "the first census lost the held interaction")
         col_grid_a = grid_col(first, pan_a)
         col_stroke_a = stroke_right(first, pan_a)
         pan_b = pan_a - 40.0
         second = painted(grab(pan_b), pan_b, previous=first)
+        self.assertTrue(face.property("_interactionActive"),
+                        "the second census lost the held interaction")
         col_grid_b = grid_col(second, pan_b)
         col_stroke_b = stroke_right(second, pan_b)
         self.assertIsNotNone(col_grid_a, "the grid never painted")

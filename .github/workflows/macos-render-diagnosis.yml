@@ -18,10 +18,12 @@ jobs:
       fail-fast: false
       matrix:
         capture: ["off", "on"]
+        render_loop: ["basic", "threaded"]
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONUTF8: "1"
       QSG_INFO: "1"
+      QSG_RENDER_LOOP: "${{ matrix.render_loop }}"
       QT_LOGGING_RULES: "qt.scenegraph.general=true;qt.rhi.*=true"
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +37,7 @@ jobs:
           python tools/build_curapackage.py
       - name: Stage Cura 5.13 and the existing connection harness
         run: |
-          RUN_DIR_NAME="/tmp/mpf-render-diagnosis/${{ matrix.capture }}" \
+          RUN_DIR_NAME="/tmp/mpf-render-diagnosis/${{ matrix.render_loop }}-${{ matrix.capture }}" \
             bash tools/native_harness.sh macos 5.13.0 connection
       - name: Sample the initial window
         run: |
@@ -59,6 +61,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: macos-render-diagnosis-${{ matrix.capture }}
-          path: /tmp/mpf-render-diagnosis/${{ matrix.capture }}/
+          name: macos-render-diagnosis-${{ matrix.render_loop }}-${{ matrix.capture }}
+          path: /tmp/mpf-render-diagnosis/${{ matrix.render_loop }}-${{ matrix.capture }}/
           if-no-files-found: error

@@ -498,22 +498,12 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
         stands any travels texture that is in hand over whatever the
         canvas is holding.
 
-        Measured on this rig: the reverse ordering is unreachable by
-        making the travels' decode the faster one. Qt's pixmap reader
-        decodes one job at a time in bind order, and the face declares
-        the class raster first — with the class raster's decode
-        stretched to ~400 ms (a 12x-stretched 119 KB PNG), its 5.7 KB
-        travels sibling was still Loading in every sample of four
-        separate runs, and a base64 data URL for the travels (no file
-        read at all) was queued behind it just the same. So the frame
-        half below rules on a picture that is coherent either way (the
-        canvas' hold, or its own re-bake: both move the two inks
-        together), and the guard is read where it lives — the
-        presentation property the composition itself binds, which the
-        mutation check (reverting it to the constant 0.8) turns red on
-        this rig. The frame half stays: on a host where a travels
-        texture can be in hand early (a warm cache, an image-provider
-        source) it is the direct symptom check.
+        The walls' real asynchronous Image request is held until a
+        pending frame has actually been sampled, then released. Qt may
+        queue the travels behind it or load them independently: in
+        either ordering, their presentation property must stay gated
+        until the exact pair arrives. The held frame's two inks must
+        remain coherent, and the new pair must eventually present.
 
         The pan is baked into both rasters, so the two views' ink
         differ by the pan in pixels: the census compares the travel
@@ -565,9 +555,36 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
         # class raster's decode is the slow one — the ordering the
         # displacement needs is the travels texture arriving first.
         moved = self._native_layer(payload, face, pan_x=pan)
+        # Hold a REAL asynchronous Image request until the pending frame
+        # has been sampled. Inflating a PNG only lengthened its decode;
+        # fast hosts could finish before the first grab and skip the very
+        # state this regression must prove. No application is created by
+        # this fixture (the domain's normal mount owns it).
+        import threading
+        from PyQt6.QtGui import QImage
+        from PyQt6.QtQuick import QQuickImageProvider
+
+        source = QImage(harness.QUrl(moved.rasterData).toLocalFile())
+        self.assertFalse(source.isNull(), "the pending fixture needs real wall pixels")
+        released = threading.Event()
+        started = threading.Event()
+
+        class PendingImage(QQuickImageProvider):
+            def __init__(self):
+                super().__init__(QQuickImageProvider.ImageType.Image)
+
+            def requestImage(self, image_id, requested_size):
+                started.set()
+                released.wait(30.0)
+                return source, source.size()
+
+        provider_name = "pending-walls"
+        provider = PendingImage()
+        self.engine.addImageProvider(provider_name, provider)
+        self.addCleanup(self.engine.removeImageProvider, provider_name)
+        self.addCleanup(released.set)
         moved.set_raster(moved.raster, "fixture-key",
-                         self._slow_raster(moved.rasterData, "slow-class",
-                                           factor=12))
+                         "image://%s/slow-class" % provider_name)
         status_of = self._status_probe()
         self._printer.setScrub(payload)
         self._printer.setLayers({"prev": None, "current": moved, "next": None})
@@ -599,6 +616,10 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
                            bool(travels_item.property("visible")),
                            float(travels_item.property("opacity") or 0.0),
                            travel_run(image), wall_run(image)))
+            if frames[-1][0] != 1 and started.is_set():
+                # The pending state is now actually observed. Let Qt
+                # finish the request, then also sample the landed pair.
+                released.set()
             if frames[-1][0] == 1 and frames[-1][1] == 1:
                 break
 

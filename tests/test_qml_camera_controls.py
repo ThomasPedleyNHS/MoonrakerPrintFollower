@@ -184,7 +184,12 @@ class CameraFpsControlTests(harness.CameraFpsControlTests):
         self.assertTrue(pane.property("_cameraBarTurning"), "the turn-over is under way")
         self.assertFalse(pane.property("cameraBarShown"),
                          "the turn-over takes the bar off the picture")
-        self._pump_ms(700)
+        self._wait_until(window,
+                         lambda _image: pane.property("cameraBarMode") == "fps"
+                         and not pane.property("_cameraBarTurning")
+                         and pane.property("cameraBarShown")
+                         and control.x() + control.width() <= frame.width() + 0.5,
+                         timeout=3.0)
         self.assertEqual(pane.property("cameraBarMode"), "fps", "the rate face lands")
         self.assertFalse(pane.property("_cameraBarTurning"))
         self.assertTrue(pane.property("cameraBarShown"), "and rides back in")

@@ -26,7 +26,8 @@ def main():
     out = Path(os.environ["HARNESS_RUN_DIR"]) / "renderer-diagnostics"
     out.mkdir(parents=True, exist_ok=True)
     prefix = out / args.phase
-    report = {"phase": args.phase, "time": time.time()}
+    report = {"phase": args.phase, "time": time.time(),
+              "render_loop": os.environ.get("QSG_RENDER_LOOP")}
 
     def still(suffix):
         target = str(prefix) + suffix + ".png"
@@ -38,12 +39,16 @@ def main():
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {"path": target, "error": str(exc)}
 
-    report["hello"] = runner.rpc({"id": 1, "cmd": "hello"})
-    # The driver starts before Cura creates its main QQuickWindow. Both
-    # comparison legs must reach the same window boundary before probing.
-    report["window_ready"] = runner.wait_window()
-    report["heartbeat"] = runner.rpc({"id": 1, "cmd": "frames", "heartbeat": True,
-                                     "deadline_ms": 1500}, timeout=30)
+    try:
+        report["hello"] = runner.rpc({"id": 1, "cmd": "hello"})
+        # The driver starts before Cura creates its main QQuickWindow.
+        report["window_ready"] = runner.wait_window()
+        report["heartbeat"] = runner.rpc({"id": 1, "cmd": "frames", "heartbeat": True,
+                                         "deadline_ms": 1500}, timeout=30)
+    except Exception as exc:
+        # A render-loop deadlock must still leave desktop evidence and a
+        # native stack, rather than losing the probe to its first RPC.
+        report["rpc_error"] = repr(exc)
     # Take the desktop picture FIRST: grabWindow may force a repaint and
     # heal a missing present. The second picture tells us if that happened.
     report["desktop_before_grab"] = still("-desktop-before-grab")
@@ -103,7 +108,12 @@ result = True
 ''', timeout=30, raise_on_error=True)
                 except Exception as exc:
                     report["external_gl_restored"] = {"error": repr(exc)}
-    pid = report["hello"].get("pid")
+    pid = report.get("hello", {}).get("pid")
+    if not pid:
+        found = subprocess.run(["/usr/bin/pgrep", "-f", "Contents/MacOS/UltiMaker-Cura"],
+                               capture_output=True, text=True, timeout=5)
+        candidates = [line for line in found.stdout.splitlines() if line.isdigit()]
+        pid = int(candidates[0]) if candidates else None
     if pid:
         try:
             sampled = subprocess.run(["/usr/bin/sample", str(pid), "3", "-file",

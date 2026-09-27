@@ -2163,7 +2163,6 @@ class PlateFaceRenderTests(RealEngineTestCase):
         self._printer.setScrub(payload)
         self._printer.setLayers({"prev": None, "current": layer, "next": None})
         self._printer.setSplit(18)
-        self._pump_ms(400)
         image = window.grabWindow()
         plot_value = face.property("plot")
         if hasattr(plot_value, "toVariant"):
@@ -2181,23 +2180,24 @@ class PlateFaceRenderTests(RealEngineTestCase):
                              + (float(bed["bedYMax"]) - bed_y)
                              * float(plot_value["sy"])))
 
-        def band_at(bed_x, bed_y):
+        def band_at(bed_x, bed_y, picture=None):
             # The red excess over the underlying background across
             # the stroke's PERPENDICULAR (rows for a horizontal run,
             # columns for a vertical one; a diagonal crosses the
             # sampled band either way).
             col = column_for(bed_x)
             row = row_for(bed_y)
+            picture = image if picture is None else picture
             values = []
             if spec["across_columns"]:
                 for c in range(col - 8, col + 9):
-                    pixel = image.pixel(int(origin.x()) + c,
+                    pixel = picture.pixel(int(origin.x()) + c,
                                         int(origin.y()) + row)
                     values.append(max(0, ((pixel >> 16) & 0xFF)
                                      - ((pixel >> 8) & 0xFF)))
             else:
                 for r in range(row - 8, row + 9):
-                    pixel = image.pixel(int(origin.x()) + col,
+                    pixel = picture.pixel(int(origin.x()) + col,
                                         int(origin.y()) + r)
                     values.append(max(0, ((pixel >> 16) & 0xFF)
                                      - ((pixel >> 8) & 0xFF)))
@@ -2215,6 +2215,18 @@ class PlateFaceRenderTests(RealEngineTestCase):
             return sum(i * v for i, v in enumerate(band)) / float(total) - 8.0
 
         label = "dpr %s %s" % (dpr, orientation)
+        # Wait for this composition, not an arbitrary 400 ms after the
+        # install. Under parallel suite load that sampled the held empty
+        # frame while the native prefix was still loading. Pixel presence
+        # and the tail's ownership must BOTH land before measuring them.
+        image = self._settled_frame(
+            window, face,
+            painted=lambda candidate: bool(face.property("_prefixStatusReady"))
+            and face.property("_vectorCoversFrom") == 10
+            and max(band_at(*spec["prefix"], picture=candidate)) > 0
+            and max(band_at(*spec["tail"], picture=candidate)) > 0)
+        self.assertEqual(face.property("_vectorCoversFrom"), 10,
+                         "%s: the tail never ceded the prefix's ownership" % label)
         prefix_band = band_at(*spec["prefix"])
         tail_band = band_at(*spec["tail"])
         prefix_peak, prefix_energy, prefix_extent = metrics(prefix_band)
