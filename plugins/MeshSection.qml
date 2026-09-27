@@ -53,7 +53,7 @@ ColumnLayout {
                 compact: true
                 printer: root.printerModel
                 opacity: root.printerModel != null && root.printerModel.bedMeshAvailable ? 1 : 0
-                tooltipText: root.printerModel != null ? "Click for the full bed mesh map (" + root.printerModel.bedMeshRangeText + ")." : "Click for the full bed mesh map."
+                tooltipText: root.printerModel != null && root.printerModel.bedMeshAvailable ? "Click for the full bed mesh map" + (root.printerModel.bedMeshRangeText !== "" ? " (" + root.printerModel.bedMeshRangeText + ")" : "") + "." : "No bed mesh loaded."
                 onClicked: root.popOverToggleRequested("mesh")
             }
 

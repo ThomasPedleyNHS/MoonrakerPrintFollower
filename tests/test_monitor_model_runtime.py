@@ -2,6 +2,97 @@
 from tests import monitor_test_support as harness
 
 class MonitorQtTests(harness.MonitorQtTests):
+    def test_resume_waits_for_acknowledgement_through_slow_heating(self):
+        model = self.monitor()
+        self.deliver_state("paused")
+        self.qt.events()
+        model._commands.send("Resume", "printer/print/resume")
+        request = next(r for r in self.transport.requests if r.path == "printer/print/resume")
+        self.assertEqual(request.options["timeout_ms"], 120000)
+        tracker = self.follower.client._session.commands
+        command = tracker._commands["Resume"]
+        self.assertEqual(tracker.expire(now=command.issued_at + 119), [])
+        self.assertTrue(model._commands.busy)
+        # The printing frame can precede the delayed HTTP acknowledgement.
+        self.deliver_state("printing")
+        request.callback({"result": "ok"}, None)
+        self.qt.events()
+        self.assertFalse(model.actionBusy)
+        self.assertIn("Printer state is printing", model.actionStatus)
+
+    def test_resume_transport_timeout_does_not_claim_the_print_was_cancelled(self):
+        model = self.monitor()
+        self.deliver_state("paused")
+        model._commands.send("Resume", "printer/print/resume")
+        request = next(r for r in self.transport.requests if r.path == "printer/print/resume")
+        request.callback(None, "Operation canceled")
+        self.qt.events()
+        self.assertIn("Resume: outcome unknown: Operation canceled", model.actionStatus)
+        self.assertFalse(model.actionBusy)
+
+    def test_restart_last_print_requires_previous_job_and_revalidates_at_dispatch(self):
+        from unittest.mock import patch
+        model = self.monitor()
+        self.assertFalse(model.canRestartLastPrint)
+        self.deliver_state("printing")
+        self.qt.events()
+        self.deliver_state("complete")
+        self.qt.events()
+        self.assertTrue(model.canRestartLastPrint)
+        with patch.object(model._file_manager, "start_print") as start:
+            model.restartLastPrint()
+            start.assert_called_once_with("part.gcode")
+            for state in ("printing", "paused"):
+                self.deliver_state(state)
+                self.qt.events()
+                self.assertFalse(model.canRestartLastPrint)
+                model.restartLastPrint()
+            self.assertEqual(start.call_count, 1)
+            self.deliver_state("complete")
+            model.setControlsLocked(True)
+            model.restartLastPrint()
+            self.assertEqual(start.call_count, 1)
+        model.setControlsLocked(False)
+        client = self.follower.client
+        client._handle_http_status({"result": {"status": {"print_stats": {"filename": ""}}}},
+                                   None, client._generation, self.status_stamp())
+        model._publish()
+        self.assertTrue(model.canRestartLastPrint,
+                        "SDCARD_RESET_FILE must not erase the previous restart target")
+
+    def test_restart_target_is_not_inherited_from_an_earlier_cura_session(self):
+        model = self.monitor()
+        self.deliver_state("complete")
+        self.qt.events()
+        self.assertFalse(model.canRestartLastPrint)
+        self.deliver_state("printing")
+        self.qt.events()
+        self.deliver_state("complete")
+        self.qt.events()
+        self.assertTrue(model.canRestartLastPrint)
+        model.restartLastPrint()
+        self.assertFalse(model.canRestartLastPrint)
+        starts = [r for r in self.transport.requests if "printer/print/start" in r.path]
+        self.assertEqual(len(starts), 1)
+        self.assertIn("part.gcode", starts[0].path)
+
+    def test_indexed_print_start_does_not_offer_another_download(self):
+        model = self.monitor()
+        self.deliver_state("printing")
+        model.setFollowerPopoverOpen(True)
+        coordinator = self.follower._runtime.coordinator
+        coordinator._snapshot = harness.replace(coordinator._snapshot, index_ready=True, plate_progress=None)
+        model._publish()
+        self.assertTrue(model.printIndexReady)
+        self.assertIn("Print indexed", model.plateProgressReason)
+        with harness.patch.object(model, "_request_monitor_download") as download:
+            model.improveEta()
+            download.assert_not_called()
+        coordinator._snapshot = harness.replace(coordinator._snapshot, index_ready=False)
+        self.deliver_state("standby")
+        model._publish()
+        self.assertEqual(model.plateProgressReason, "No active print.")
+
     def test_last_action_timestamp_is_event_time_not_publication_time(self):
         from unittest.mock import patch
         model = self.monitor()
@@ -2750,7 +2841,7 @@ Item {
                 # popup's hover-driven visibility is not a control
                 # disappearing — one pattern covers every unique
                 # HoverHandler id.
-                if harness.re.match(r"visible: (parent\.hovered|tooltipHover\d+\.hovered( && root\.tooltipText\.length > 0)?)$", expression):
+                if harness.re.match(r"visible: (parent\.hovered|(parent\.enabled && )?tooltipHover\d+\.hovered( && root\.tooltipText\.length > 0)?)$", expression):
                     continue
                 self.assertIn(expression, allowed,
                               f"{path.name}:{number}: state-gated visible: {expression}")

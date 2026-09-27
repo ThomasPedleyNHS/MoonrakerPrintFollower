@@ -184,8 +184,8 @@ MonitorPopOver {
                         anchors.fill: parent
                         opacity: modelData.slot === true ? 0 : 1
                         interactive: modelData.slot !== true
-                        rowId: modelData.id
-                        rowTitle: modelData.title
+                        rowId: modelData.slot === true ? "" : modelData.id
+                        rowTitle: modelData.slot === true ? "" : modelData.title
                         rowVisible: root.hidden.indexOf(modelData.id) === -1
                         onToggleRequested: root.commitToggle(modelData.id)
                         onMoveRequested: function (steps) {

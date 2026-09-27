@@ -23,7 +23,7 @@ class MonitorCommands(QObject):
     # A resumed printer may re-heat before it actually resumes; the
     # confirmation must outlive a slow heat-up instead of reporting
     # failure while the printer does exactly what it was asked.
-    EXPECTED_TIMEOUT_S = {"Resume": 300}
+    EXPECTED_TIMEOUT_S = {"Resume": 130}
     MAX_QUEUED_COMMANDS = 16
     # The post-e-stop reconnect delay (the ruling,
     # 2026-09-10, live-proven on their printer): after the stop the
@@ -197,7 +197,11 @@ class MonitorCommands(QObject):
                     # the command executed: the script may already have
                     # been accepted by the printer.
                     self._record_status(f"{label} outcome unknown: {error}" if not self._retired_cancel else "")
-                if expected: self._data.fail_command(label, error)
+                if expected:
+                    # The tracker's signal owns the final display too:
+                    # preserve the refusal/unknown distinction there.
+                    detail = f"refused: {error}" if payload is not None else f"outcome unknown: {error}"
+                    self._data.fail_command(label, detail)
                 self._tracked = ""
             elif expected:
                 self._live = ""
@@ -219,8 +223,11 @@ class MonitorCommands(QObject):
         # Commands get a long transfer timeout: Moonraker accepts the
         # script before responding, so a slow reply must never be
         # misread as a failed command.
+        # RESUME's reply waits for the macro, including M109 heating.
+        # Allow the agreed two-minute heating window, then leave ten
+        # seconds for the state confirmation after an acknowledgement.
         started = self._data.request("control", "POST", path, finished, body=body,
-            category="command", timeout_ms=30000)
+            category="command", timeout_ms=120000 if label == "Resume" else 30000)
         if not started:
             finished(None, "Moonraker is unavailable")
         return started

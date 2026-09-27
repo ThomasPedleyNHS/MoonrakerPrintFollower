@@ -82,7 +82,7 @@ ColumnLayout {
             }
             UM.Label {
                 Layout.fillWidth: true
-                text: root.busy() ? "Downloading and indexing the print…" : root.idleInstruction
+                text: root.printerModel != null && root.printerModel.printIndexReady === true ? "Print indexed — waiting for print movements." : root.busy() ? "Downloading and indexing the print…" : root.idleInstruction
                 color: UM.Theme.getColor("text_inactive")
                 font: UM.Theme.getFont("small")
                 wrapMode: Text.WordWrap
@@ -92,7 +92,7 @@ ColumnLayout {
         // layout and the whole row stays one target.
         MouseArea {
             anchors.fill: parent
-            enabled: root.printerModel != null && root.printerModel.monitorConnected
+            enabled: root.printerModel != null && root.printerModel.monitorConnected && root.printerModel.printIndexReady !== true
             cursorShape: root.printerModel != null ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: {
                 if (root.printerModel != null) {

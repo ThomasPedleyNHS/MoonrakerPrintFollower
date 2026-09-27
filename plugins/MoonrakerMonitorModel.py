@@ -497,7 +497,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     _SIGNAL_KEYS = (
         ("monitorChanged", ("monitorState", "monitorConnected", "monitorFilename", "monitorProgress", "monitorLayer", "monitorLayerProgress",
                             "platePassFraction",
-                            "improvingEta", "improveEtaProgress", "improveEtaPhase", "monitorElapsed",
+                            "improvingEta", "printIndexReady", "improveEtaProgress", "improveEtaPhase", "monitorElapsed",
                             "monitorEta", "monitorEtaBasis", "monitorFinish", "monitorSpeed", "monitorFlow",
                             "monitorPosition", "monitorPositionCompact", "monitorVelocity", "monitorFlowRate", "monitorFlowDiameter",
                             "monitorAccelLimit", "monitorMessage", "monitorLayerSource", "filamentUsed", "filamentRemaining",
@@ -547,7 +547,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         ("systemChanged", ("klippyState", "moonrakerVersion", "klipperVersion", "hostLoad", "memoryAvailable",
                            "cpuTemperature", "mcuSummary", "mcuItems")),
         ("endstopsChanged", ("endstopItems", "endstopSummary")),
-        ("actionChanged", ("printActive", "printJobCaption", "canPausePrint", "canResumePrint", "pauseReason", "pauseReasonDetail", "resumeReason", "resumeReasonDetail", "canCancelPrint", "actionBusy",
+        ("actionChanged", ("printActive", "printJobCaption", "canPausePrint", "canResumePrint", "pauseReason", "pauseReasonDetail", "resumeReason", "resumeReasonDetail", "canCancelPrint", "canRestartLastPrint", "actionBusy",
                            "actionStatus", "actionTimestamp", "emergencyHoldProgress")),
         ("controlsChanged", ("monitorLayerHeight", "macroNames", "hasQuadGantryLevel", "hasBedMesh", "canRunSetup",
                              "temperaturePresetNames", "canApplyTemperaturePreset", "speedFactorPercent", "flowFactorPercent",
@@ -643,6 +643,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # hydration read runs first) queue here and flush once the
         # console lands.
         self._store_notes = []
+        self._last_print_files = {}
         # The file-manager Download capability: the follower owns the
         # one-shot stream + load-into-Cura (the same lane discipline
         # as the improve-ETA pull). Download failures (stream errors,
@@ -1481,7 +1482,9 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 # download action owns that state (its idle line
                 # carries the offer). A non-empty reason is the
                 # exists-but-loading case, the plain label's own.
-                values["plateProgressReason"] = ""
+                values["plateProgressReason"] = ("Print indexed — waiting for the print to reach an indexed layer."
+                                                 if snapshot.index_ready else "" if self._commands.print_active
+                                                 else "No active print.")
             elif not values["plateProgressAvailable"]:
                 # A refusal must not read as a load in progress: the
                 # service latches a layer it could not present, and the
@@ -1609,6 +1612,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # state (a print confirmed before the popup closed still
         # needs its verdict).
         self._print_start.tick(self._data.snapshot.core)
+        self._observe_last_print()
         # The no-reflow rule's sibling ruling (2026-09-10):
         # while DISCONNECTED every control on the Monitor page disables
         # — the QML gates its sections and the emergency stop on this.
@@ -1682,6 +1686,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         values.update(printActive=commands.print_active,
             canPausePrint=pause_verdict.mode == "allowed",
             canResumePrint=resume_verdict.mode == "allowed",
+            canRestartLastPrint=self._can_restart_last_print(),
             pauseReason=pause_verdict.reason,
             pauseReasonDetail=REASON_DETAIL.get(pause_verdict.reason, ""),
             resumeReason=resume_verdict.reason,
@@ -1735,6 +1740,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             followerLayerAnchor=self._follower_layer_anchor,
             britishSpelling=_british_spelling(),
             improvingEta=(snapshot.load_active or self._improving_eta) and not snapshot.index_ready,
+            printIndexReady=snapshot.index_ready,
             # The next scheduled pause (the live ruling): the
             # JobSection's readout and both stacked bars' orange
             # third fill.
@@ -1842,6 +1848,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     filamentRemaining = value_property(str, "filamentRemaining", monitorChanged, "—")
     britishSpelling = value_property(bool, "britishSpelling", monitorChanged, False)
     improvingEta = value_property(bool, "improvingEta", monitorChanged, False)
+    printIndexReady = value_property(bool, "printIndexReady", monitorChanged, False)
     nextPauseLayer = value_property(int, "nextPauseLayer", monitorChanged, -1)
     nextPauseEta = value_property(str, "nextPauseEta", monitorChanged, "")
     nextPauseFraction = value_property(float, "nextPauseFraction", monitorChanged, -1.0)
@@ -1881,6 +1888,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     resumeReason = value_property(str, "resumeReason", actionChanged, "")
     resumeReasonDetail = value_property(str, "resumeReasonDetail", actionChanged, "")
     canCancelPrint = value_property(bool, "canCancelPrint", actionChanged, False)
+    canRestartLastPrint = value_property(bool, "canRestartLastPrint", actionChanged, False)
     actionBusy = value_property(bool, "actionBusy", actionChanged, False)
     actionStatus = value_property(str, "actionStatus", actionChanged, "")
     actionTimestamp = value_property(str, "actionTimestamp", actionChanged, "")
@@ -2933,6 +2941,42 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     @pyqtSlot()
     def cancelPrint(self):
         if self.canCancelPrint: self._commands.send("Cancel", "printer/print/cancel")
+
+    def _last_print_key(self):
+        try:
+            return (self._identity()[0], self._config().url)
+        except Exception:
+            return None
+
+    def _observe_last_print(self):
+        key = self._last_print_key()
+        if key is None:
+            return
+        stats = self._data.snapshot.core.get("print_stats") or {}
+        filename = str(stats.get("filename") or "").strip()
+        if filename and stats.get("state") in {"printing", "paused"}:
+            self._last_print_files[key] = filename
+
+    def _can_restart_last_print(self):
+        observation = getattr(self._data, "observation", None)
+        # Session memory survives a cancel macro's SDCARD_RESET_FILE,
+        # but is never persisted or recovered from an older Cura session.
+        return bool(observation is not None
+                    and can_restart(observation).mode == "allowed"
+                    and not self._commands.busy
+                    and self._file_manager.print_attempt is None
+                    and self._last_print_files.get(self._last_print_key()))
+
+    @pyqtSlot()
+    def restartLastPrint(self):
+        # Revalidate at dispatch: another client can start a job between
+        # publication of the enabled button and its click.
+        if not self._can_restart_last_print():
+            return
+        stats = self._data.snapshot.core.get("print_stats") or {}
+        self._file_manager.start_print(self._last_print_files[self._last_print_key()])
+        self._print_start.arm(str(stats.get("state") or ""))
+        self._publish()
     @pyqtSlot(str)
     def excludeObject(self, name): self._controls.exclude(name)
 
@@ -3078,6 +3122,8 @@ class MoonrakerMonitorModel(PrinterOutputModel):
 
     @pyqtSlot()
     def improveEta(self):
+        if self._print_state().index_ready:
+            return
         # Download and index for the Monitor only — no preview render
         # unless the user loads it there later. The glyph turns into an
         # hourglass until the index lands, the pull fails, or the 90 s

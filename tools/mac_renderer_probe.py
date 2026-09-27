@@ -21,6 +21,7 @@ def main():
     if sys.platform != "darwin":
         parser.error("this diagnostic requires the macOS harness host")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests" / "harness"))
     from tests.harness import runner
     out = Path(os.environ["HARNESS_RUN_DIR"]) / "renderer-diagnostics"
     out.mkdir(parents=True, exist_ok=True)

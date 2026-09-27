@@ -101,6 +101,13 @@ ColumnLayout {
             }
         }
 
+        CentredSecondaryButton {
+            Layout.fillWidth: true
+            text: "Restart last print"
+            enabled: root.printerModel != null && root.printerModel.canRestartLastPrint
+            onClicked: root.printerModel.restartLastPrint()
+        }
+
         GridLayout {
             columns: 2
             Layout.fillWidth: true

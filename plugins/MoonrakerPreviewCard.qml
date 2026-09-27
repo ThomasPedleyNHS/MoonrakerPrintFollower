@@ -370,8 +370,8 @@ Item {
         // the bed each get their own labelled line, and the slot
         // splits into the countdown and the finish time. A refusal
         // reason (no separator) occupies the countdown line alone.
-        stripTemps.text = stripValid ? base.previewBlock.hotend : "—";
-        stripBed.text = stripValid ? base.previewBlock.bed : "—";
+        stripTemps.text = stripValid && typeof base.previewBlock.hotend === "string" ? base.previewBlock.hotend : "—";
+        stripBed.text = stripValid && typeof base.previewBlock.bed === "string" ? base.previewBlock.bed : "—";
         var slotText = stripSlotText();
         var parts = slotText.indexOf(" · ") >= 0 ? slotText.split(" · ") : [slotText, ""];
         stripSlot.text = stripValid ? parts[0] : "—";

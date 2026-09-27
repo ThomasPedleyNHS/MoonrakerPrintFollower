@@ -3139,7 +3139,7 @@ Item {
             Layout.fillWidth: true
             visible: root.progress == null || root.progress.reason === ""
             printerModel: root.printerModel
-            idleInstruction: "No index yet — the download button builds one without loading the preview."
+            idleInstruction: "Download and index this print to follow its progress."
         }
     }
 

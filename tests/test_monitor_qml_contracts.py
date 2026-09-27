@@ -346,7 +346,9 @@ class MonitorModelContractTests(harness.MonitorModelContractTests):
         self.assertIn("id: infoPanel", harness.MONITOR_QML)
         # The mesh section hosts the mini map; a click opens the shared
         # pop-over. The button is gone; the mini map's tooltip remains.
-        self.assertIn('tooltipText: root.printerModel != null ? "Click for the full bed mesh map ("', harness.MESH_SECTION_QML)
+        self.assertIn('root.printerModel.bedMeshAvailable', harness.MESH_SECTION_QML)
+        self.assertIn('root.printerModel.bedMeshRangeText !== ""', harness.MESH_SECTION_QML)
+        self.assertIn('"No bed mesh loaded."', harness.MESH_SECTION_QML)
         self.assertNotIn('id: mapButton', harness.MONITOR_QML)
         # Cura-style collapsible sections, persisted per section, sharing
         # the CollapsibleSectionHeader type across all three panes. The

@@ -1876,6 +1876,9 @@ SCENARIOS = [
      ]},
     {"id": "g6", "group": "motion", "name": "pause and resume ride the peer's print routes",
      "steps": [
+         {"op": "sim_set", "state": {"print_stats": {"state": "standby", "filename": ""}}},
+         {"op": "wait_model", "prop": "monitorFilename", "value": "", "budget": 15},
+         {"op": "assert_model", "prop": "canRestartLastPrint", "value": False},
          {"op": "sim_set", "state": {"print_stats": {"state": "printing", "filename": "scenario1.gcode"}}},
          {"op": "wait_model", "prop": "monitorState", "contains": "print", "budget": 15},
          # The policy gate (4.2.0): while printing the jog button
@@ -1889,6 +1892,7 @@ SCENARIOS = [
          # published the denial (the re-review's D4 ordering).
          {"op": "assert_model", "prop": "jogReason", "contains": "pause first", "budget": 10},
          {"op": "assert_model", "prop": "canRestart", "value": False, "budget": 10},
+         {"op": "assert_model", "prop": "canRestartLastPrint", "value": False},
          {"op": "item_disabled", "objectName": "moonrakerJogXPlus"},
          # The lane's revalidation (4.3.0): while PRINTING a Resume
          # refuses with the policy's words, no command leaves the
@@ -1908,12 +1912,18 @@ SCENARIOS = [
          # Paused keeps the shipped caption — moves run immediately.
          {"op": "assert_model", "prop": "jogReason", "value": "Paused — moves run immediately", "budget": 10},
          {"op": "assert_model", "prop": "printJobCaption", "value": "Paused", "budget": 10},
+         {"op": "assert_model", "prop": "canRestartLastPrint", "value": False},
          # The rows flip with the pause: the resume side opens, the
          # pause side names why it refuses.
          {"op": "assert_model", "prop": "resumeReason", "value": "", "budget": 10},
          {"op": "assert_model", "prop": "pauseReason", "value": "Print is already paused", "budget": 10},
          {"op": "exec_slot", "slot": "resumePrint", "args": []},
          {"op": "sim_ledger", "needle": "print/resume", "method": "POST", "min": 1, "budget": 20},
+         {"op": "wait_model", "prop": "canPausePrint", "value": True, "budget": 15},
+         {"op": "sim_set", "state": {"print_stats": {"state": "complete", "filename": "scenario1.gcode"}}},
+         {"op": "wait_model", "prop": "canRestartLastPrint", "value": True, "budget": 15},
+         {"op": "click_text", "text": "Restart last print"},
+         {"op": "sim_ledger", "needle": "print/start", "method": "POST", "min": 1, "budget": 20},
      ]},
     {"id": "g8", "group": "motion", "name": "the lock toggle flips the controls lock",
      "steps": [

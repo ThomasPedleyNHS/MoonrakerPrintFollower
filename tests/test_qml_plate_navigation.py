@@ -2,6 +2,36 @@
 from tests import qml_engine_support as harness
 
 class PlateFaceRenderTests(harness.PlateFaceRenderTests):
+    def test_colour_keys_preserve_canvas_geometry_and_paint_gradients(self):
+        from PyQt6.QtCore import QPointF
+        monitor, window, face = self._follower_popover()
+        controls = self.find(monitor, "moonrakerFollowerColourControls")
+        face.setProperty("colourRanges", {
+            "speed": [10, 100], "height": [0.1, 0.3],
+            "width": [0.2, 0.8], "flow": [1, 20],
+        })
+        geometries = []
+        for mode in range(6):
+            face.setProperty("colourScheme", {
+                "mode": mode, "materials": ["#ff0000", "#00ff00", "#0000ff"],
+            })
+            self._pump_ms(80)
+            geometries.append((face.width(), face.height(), controls.height()))
+            if mode >= 2:
+                bar = self.find(controls, "moonrakerFollowerColourGradient")
+                self.assertGreater(bar.width(), 100)
+                self.assertGreater(bar.height(), 0)
+                image = window.grabWindow()
+                origin = bar.mapToItem(window.contentItem(), QPointF(0, 0))
+                ratio = image.devicePixelRatio()
+                y = int((origin.y() + bar.height() / 2) * ratio)
+                colours = {image.pixel(int((origin.x() + bar.width() * fraction) * ratio), y)
+                           for fraction in (0.1, 0.3, 0.6, 0.9)}
+                self.assertGreaterEqual(len(colours), 3,
+                                        "the gradient strips did not paint distinct colours")
+        self.assertEqual(1, len(set(geometries)),
+                         "selecting a colour scheme reflowed the canvas: %r" % geometries)
+
     def test_the_picker_canvas_never_reflows_on_hover(self):
         monitor, window = self.mount_window("MoonrakerMonitor.qml", 900, 760)
         self._open(monitor, "plate")

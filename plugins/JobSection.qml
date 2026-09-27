@@ -348,11 +348,13 @@ ColumnLayout {
                     width: 16 * screenScaleFactor
                     height: 16 * screenScaleFactor
                     opacity: root.printerModel != null && root.printerModel.printActive && (root.printerModel.monitorEtaBasis === "blend" || root.printerModel.improvingEta) ? 1 : 0
+                    enabled: opacity > 0
                     HoverHandler {
                         id: tooltipHover5
+                        enabled: parent.enabled
                     }
                     UM.ToolTip {
-                        visible: tooltipHover5.hovered
+                        visible: parent.enabled && tooltipHover5.hovered
                         targetPoint: Qt.point(parent.width / 2, 0)
                         x: 0
                         y: parent.height + UM.Theme.getSize("default_margin").height
@@ -417,7 +419,7 @@ ColumnLayout {
                         // legitimate retry, and after a failed download
                         // the glyph is the ONLY in-UI recovery (the
                         // hourglass state ends on failure — panel P1-1).
-                        enabled: root.printerModel != null && root.printerModel.monitorConnected
+                        enabled: parent.enabled && root.printerModel != null && root.printerModel.monitorConnected
                         cursorShape: root.printerModel != null ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: root.printerModel.improveEta()
                     }

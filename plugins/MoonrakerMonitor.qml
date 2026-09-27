@@ -3060,7 +3060,7 @@ Component {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         UM.Label {
-                            text: "included"
+                            text: "Included"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -3074,7 +3074,7 @@ Component {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         UM.Label {
-                            text: "current"
+                            text: "Current"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -3093,7 +3093,7 @@ Component {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         UM.Label {
-                            text: "printed"
+                            text: "Printed"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -3107,7 +3107,7 @@ Component {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         UM.Label {
-                            text: "excluded"
+                            text: "Excluded"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }

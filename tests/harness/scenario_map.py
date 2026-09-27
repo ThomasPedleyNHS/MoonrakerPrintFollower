@@ -72,6 +72,7 @@ SCENARIO_MAP = {
     "MoonrakerMonitorModel.refreshFileManager": "f1",
     "MoonrakerMonitorModel.refreshWebcams": "e1",
     "MoonrakerMonitorModel.resumePrint": "g6",
+    "MoonrakerMonitorModel.restartLastPrint": "g6",
     "MoonrakerMonitorModel.runMacro": "g5",
     "MoonrakerMonitorModel.runQuadGantryLevel": "g2",
     "MoonrakerMonitorModel.saveConfig": "i6",
@@ -396,6 +397,7 @@ PREFIX_RULES = [
     ("key", "printJobCaption", "g6"),
     ("key", "canPausePrint", "g6"),
     ("key", "canResumePrint", "g6"),
+    ("key", "canRestartLastPrint", "g6"),
     ("key", "pauseReason", "g6"),
     ("key", "pauseReasonDetail", "g6"),
     # The next scheduled pause's published keys ride the improve-ETA
@@ -431,6 +433,24 @@ PREFIX_RULES = [
 # fields are validated by test_coverage.py. An entry whose re-check
 # trigger fires must be re-probed, not carried forward silently.
 EXCLUSIONS = {
+    "printIndexReady": {
+        "reason": "read-only download guard; startup with an index but no physical layer is covered in Qt runtime tests",
+        "evidence": "test_monitor_model_runtime: indexed PRINT_START does not offer another download",
+        "date": "2026-09-27",
+        "recheck": "a native PRINT_START scenario covers this waiting phase",
+    },
+    "moonrakerFollowerColourControls": {
+        "reason": "noninteractive legend container; its colour selector is mapped to b11",
+        "evidence": "test_qml_plate_navigation: colour keys preserve geometry and paint gradients",
+        "date": "2026-09-27",
+        "recheck": "the legend container becomes interactive",
+    },
+    "moonrakerFollowerColourGradient": {
+        "reason": "paint-only gradient key, not an input surface",
+        "evidence": "test_qml_plate_navigation: all gradient modes paint distinct sampled colours",
+        "date": "2026-09-27",
+        "recheck": "the gradient key gains an input action",
+    },
     "GpuFollower.pointAtMotion": {
         "reason": "internal retained-geometry lookup for the animated marker, not a user command",
         "evidence": "tests/test_gpu_follower.py: test_marker_tracks_every_curve_subedge_and_matches_shader_fraction",

@@ -7,6 +7,7 @@ import "PreviewColours.js" as PreviewColours
 
 ColumnLayout {
     id: root
+    objectName: "moonrakerFollowerColourControls"
     property var printerModel: null
     property var face: null
     property var scheme: face != null ? face.colourScheme : ({
@@ -73,14 +74,37 @@ ColumnLayout {
                 }
             }
         }
+        Row {
+            spacing: 3 * screenScaleFactor
+            UM.Label {
+                text: "Layer:"
+            }
+            Rectangle {
+                width: 12 * screenScaleFactor
+                height: 2 * screenScaleFactor
+                color: MoonrakerTheme.seriesDefault
+                opacity: 0.55
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            UM.Label {
+                text: "Ghost"
+            }
+        }
     }
     Item {
         // Hidden keys still determine the reserved height. Switching modes
         // never reflows the canvas; a larger material tool list may wrap.
         Layout.fillWidth: true
-        Layout.preferredHeight: Math.max(materialKey.implicitHeight, gradientKey.implicitHeight, featureKey.implicitHeight)
+        Layout.preferredHeight: Math.max(materialKey.implicitHeight, gradientUnitsMetric.implicitHeight, featureKey.implicitHeight)
         Layout.minimumHeight: Layout.preferredHeight
         Layout.maximumHeight: Layout.preferredHeight
+        UM.Label {
+            id: gradientUnitsMetric
+            visible: false
+            // Superscript flow-rate units can be taller than plain mm/s.
+            // Reserve those font metrics in every mode, including Line type.
+            text: "0.00 mm³/s"
+        }
         Flow {
             id: materialKey
             anchors.left: parent.left
@@ -103,22 +127,6 @@ ColumnLayout {
                     UM.Label {
                         text: "Tool " + (index + 1)
                     }
-                }
-            }
-            Row {
-                spacing: 3 * screenScaleFactor
-                UM.Label {
-                    text: "Layer:"
-                }
-                Rectangle {
-                    width: 12 * screenScaleFactor
-                    height: 2 * screenScaleFactor
-                    color: MoonrakerTheme.seriesDefault
-                    opacity: 0.55
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                UM.Label {
-                    text: "Ghost"
                 }
             }
         }
@@ -209,22 +217,6 @@ ColumnLayout {
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
-            Row {
-                spacing: 3 * screenScaleFactor
-                UM.Label {
-                    text: "Layer:"
-                }
-                Rectangle {
-                    width: 12 * screenScaleFactor
-                    height: 2 * screenScaleFactor
-                    color: MoonrakerTheme.seriesDefault
-                    opacity: 0.55
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                UM.Label {
-                    text: "Ghost"
-                }
-            }
         }
         RowLayout {
             id: gradientKey
@@ -232,19 +224,16 @@ ColumnLayout {
             anchors.right: parent.right
             visible: root.mode >= 2
             UM.Label {
-                text: "Line type:"
-            }
-            UM.Label {
                 text: Number(root.limits[0]).toFixed(2) + " " + root.units
             }
             Row {
+                objectName: "moonrakerFollowerColourGradient"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 8 * screenScaleFactor
                 Repeater {
                     model: 64
                     delegate: Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right / 64
+                        width: parent.width / 64
                         height: parent.height
                         color: PreviewColours.gradient(root.mode, root.limits[0] + (root.limits[1] - root.limits[0]) * index / 63, root.limits)
                     }
@@ -252,22 +241,6 @@ ColumnLayout {
             }
             UM.Label {
                 text: Number(root.limits[1]).toFixed(2) + " " + root.units
-            }
-            Row {
-                spacing: 3 * screenScaleFactor
-                UM.Label {
-                    text: "Layer:"
-                }
-                Rectangle {
-                    width: 12 * screenScaleFactor
-                    height: 2 * screenScaleFactor
-                    color: MoonrakerTheme.seriesDefault
-                    opacity: 0.55
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                UM.Label {
-                    text: "Ghost"
-                }
             }
         }
     }
