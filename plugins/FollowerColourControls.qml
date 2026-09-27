@@ -36,62 +36,6 @@ ColumnLayout {
         }
     }
     Flow {
-        visible: root.mode === 0
-        Layout.fillWidth: true
-        spacing: UM.Theme.getSize("thin_margin").width
-        Repeater {
-            model: root.scheme.materials || []
-            delegate: Row {
-                spacing: 3 * screenScaleFactor
-                Rectangle {
-                    width: 12 * screenScaleFactor
-                    height: 3 * screenScaleFactor
-                    color: modelData
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                UM.Label {
-                    text: "Tool " + (index + 1)
-                }
-            }
-        }
-    }
-    RowLayout {
-        visible: root.mode >= 2
-        Layout.fillWidth: true
-        UM.Label {
-            text: Number(root.limits[0]).toFixed(2) + " " + root.units
-        }
-        Row {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 8 * screenScaleFactor
-            Repeater {
-                model: 64
-                delegate: Rectangle {
-                    width: parent.width / 64
-                    height: parent.height
-                    color: PreviewColours.gradient(root.mode, root.limits[0] + (root.limits[1] - root.limits[0]) * index / 63, root.limits)
-                }
-            }
-        }
-        UM.Label {
-            text: Number(root.limits[1]).toFixed(2) + " " + root.units
-        }
-    }
-    Row {
-        visible: root.mode !== 1
-        spacing: 4 * screenScaleFactor
-        Rectangle {
-            width: 12 * screenScaleFactor
-            height: 2 * screenScaleFactor
-            color: MoonrakerTheme.seriesDefault
-            opacity: 0.55
-            anchors.verticalCenter: parent.verticalCenter
-        }
-        UM.Label {
-            text: "Layer ghost"
-        }
-    }
-    Flow {
         Layout.fillWidth: true
         spacing: UM.Theme.getSize("thin_margin").width
         UM.Label {
@@ -126,6 +70,203 @@ ColumnLayout {
                 }
                 UM.Label {
                     text: modelData.label
+                }
+            }
+        }
+    }
+    Item {
+        // Hidden keys still determine the reserved height. Switching modes
+        // never reflows the canvas; a larger material tool list may wrap.
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.max(materialKey.implicitHeight, gradientKey.implicitHeight, featureKey.implicitHeight)
+        Layout.minimumHeight: Layout.preferredHeight
+        Layout.maximumHeight: Layout.preferredHeight
+        Flow {
+            id: materialKey
+            anchors.left: parent.left
+            anchors.right: parent.right
+            visible: root.mode === 0
+            spacing: UM.Theme.getSize("thin_margin").width
+            UM.Label {
+                text: "Line type:"
+            }
+            Repeater {
+                model: root.scheme.materials || []
+                delegate: Row {
+                    spacing: 3 * screenScaleFactor
+                    Rectangle {
+                        width: 12 * screenScaleFactor
+                        height: 3 * screenScaleFactor
+                        color: modelData
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    UM.Label {
+                        text: "Tool " + (index + 1)
+                    }
+                }
+            }
+            Row {
+                spacing: 3 * screenScaleFactor
+                UM.Label {
+                    text: "Layer:"
+                }
+                Rectangle {
+                    width: 12 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: MoonrakerTheme.seriesDefault
+                    opacity: 0.55
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Ghost"
+                }
+            }
+        }
+        Flow {
+            id: featureKey
+            anchors.left: parent.left
+            anchors.right: parent.right
+            visible: root.mode === 1
+            spacing: UM.Theme.getSize("thin_margin").width
+            UM.Label {
+                text: "Line type:"
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("WALL-OUTER") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Wall outer"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("WALL-INNER") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Wall inner"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("SKIN") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Skin"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("FILL") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Infill"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("SUPPORT") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Support"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 2 * screenScaleFactor
+                Rectangle {
+                    width: 10 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: root.face != null ? root.face.classColour("SKIRT") : MoonrakerTheme.seriesDefault
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Skirt"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Row {
+                spacing: 3 * screenScaleFactor
+                UM.Label {
+                    text: "Layer:"
+                }
+                Rectangle {
+                    width: 12 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: MoonrakerTheme.seriesDefault
+                    opacity: 0.55
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Ghost"
+                }
+            }
+        }
+        RowLayout {
+            id: gradientKey
+            anchors.left: parent.left
+            anchors.right: parent.right
+            visible: root.mode >= 2
+            UM.Label {
+                text: "Line type:"
+            }
+            UM.Label {
+                text: Number(root.limits[0]).toFixed(2) + " " + root.units
+            }
+            Row {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 8 * screenScaleFactor
+                Repeater {
+                    model: 64
+                    delegate: Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right / 64
+                        height: parent.height
+                        color: PreviewColours.gradient(root.mode, root.limits[0] + (root.limits[1] - root.limits[0]) * index / 63, root.limits)
+                    }
+                }
+            }
+            UM.Label {
+                text: Number(root.limits[1]).toFixed(2) + " " + root.units
+            }
+            Row {
+                spacing: 3 * screenScaleFactor
+                UM.Label {
+                    text: "Layer:"
+                }
+                Rectangle {
+                    width: 12 * screenScaleFactor
+                    height: 2 * screenScaleFactor
+                    color: MoonrakerTheme.seriesDefault
+                    opacity: 0.55
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                UM.Label {
+                    text: "Ghost"
                 }
             }
         }

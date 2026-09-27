@@ -2613,8 +2613,7 @@ Item {
             # The follower's legend changes content with its colour mode.
             "visible: root.mode === 0",
             "visible: root.mode >= 2",
-            "visible: root.mode !== 1",
-            "visible: progressFace.colourScheme.mode === 1",
+            "visible: root.mode === 1",
             "visible: !modelData.isLatest",
             "visible: modelData.isLatest || entry.open",
             # The overlay's scroll chevrons (the file manager's

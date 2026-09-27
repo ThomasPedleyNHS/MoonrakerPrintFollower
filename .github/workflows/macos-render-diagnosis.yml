@@ -5,6 +5,7 @@ name: macOS renderer diagnosis
 # both the internal Qt frame and the actual desktop. Product code is unchanged.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
