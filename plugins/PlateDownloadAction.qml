@@ -12,6 +12,8 @@ ColumnLayout {
     Layout.fillWidth: true
     property var printerModel: null
     property string idleInstruction: "Click here to download and index the print — the plate needs the index."
+    property int textAlignment: Text.AlignHCenter
+    property bool indexReady: root.printerModel != null && root.printerModel.printIndexReady === true
     spacing: UM.Theme.getSize("narrow_margin").height
 
     function busy() {
@@ -31,12 +33,14 @@ ColumnLayout {
     // MouseArea and the RowLayout that lays the row out.
     Item {
         id: instructionRow
+        visible: !root.indexReady
         Layout.fillWidth: true
         implicitHeight: instructionRowContent.implicitHeight
 
         RowLayout {
             id: instructionRowContent
-            anchors.fill: parent
+            width: Math.min(parent.width, 16 * screenScaleFactor + spacing + instructionMetrics.advanceWidth)
+            anchors.horizontalCenter: parent.horizontalCenter
             spacing: UM.Theme.getSize("narrow_margin").width
             Item {
                 width: 16 * screenScaleFactor
@@ -81,19 +85,26 @@ ColumnLayout {
                 }
             }
             UM.Label {
+                id: instructionLabel
                 Layout.fillWidth: true
-                text: root.printerModel != null && root.printerModel.printIndexReady === true ? "Print indexed — waiting for print movements." : root.busy() ? "Downloading and indexing the print…" : root.idleInstruction
+                text: root.busy() ? "Downloading and indexing the print…" : root.idleInstruction
                 color: UM.Theme.getColor("text_inactive")
                 font: UM.Theme.getFont("small")
                 wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignLeft
             }
+        }
+        TextMetrics {
+            id: instructionMetrics
+            font: instructionLabel.font
+            text: instructionLabel.text
         }
         // Last of the wrapper's children, so it sits above the row
         // layout and the whole row stays one target.
         MouseArea {
             anchors.fill: parent
             enabled: root.printerModel != null && root.printerModel.monitorConnected && root.printerModel.printIndexReady !== true
-            cursorShape: root.printerModel != null ? Qt.PointingHandCursor : Qt.ArrowCursor
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: {
                 if (root.printerModel != null) {
                     root.printerModel.improveEta();
@@ -102,8 +113,20 @@ ColumnLayout {
         }
     }
 
-    RowLayout {
+    UM.Label {
         Layout.fillWidth: true
+        visible: root.indexReady
+        text: "Print indexed — waiting for print movements."
+        color: UM.Theme.getColor("text_inactive")
+        font: UM.Theme.getFont("small")
+        wrapMode: Text.WordWrap
+        horizontalAlignment: root.textAlignment
+    }
+
+    RowLayout {
+        objectName: "plateDownloadProgressRow"
+        Layout.alignment: Qt.AlignHCenter
+        Layout.preferredWidth: Math.min(root.width, 320 * screenScaleFactor)
         opacity: root.busy() ? 1 : 0
         spacing: UM.Theme.getSize("narrow_margin").width
 

@@ -433,6 +433,18 @@ PREFIX_RULES = [
 # fields are validated by test_coverage.py. An entry whose re-check
 # trigger fires must be re-probed, not carried forward silently.
 EXCLUSIONS = {
+    "plateDownloadProgressRow": {
+        "reason": "noninteractive progress readout; the enclosing download action is mapped",
+        "evidence": "test_qml_object_picker: instruction and progress rows are centred on the real engine",
+        "date": "2026-09-27",
+        "recheck": "the progress row gains an input action",
+    },
+    "plateTrackingAvailable": {
+        "reason": "ungated live tracking flag used by the picker, independent of follower visibility",
+        "evidence": "test_monitor_model_runtime: live tracking readiness updates with both follower surfaces closed",
+        "date": "2026-09-27",
+        "recheck": "the native picker scenario closes both follower surfaces before testing tracking",
+    },
     "printIndexReady": {
         "reason": "read-only download guard; startup with an index but no physical layer is covered in Qt runtime tests",
         "evidence": "test_monitor_model_runtime: indexed PRINT_START does not offer another download",

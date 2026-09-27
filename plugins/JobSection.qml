@@ -338,8 +338,8 @@ ColumnLayout {
                 }
                 // The Improve-ETA affordance: a small
                 // download glyph beside the value it
-                // improves, shown only while the
-                // plain blend is the active basis.
+                // improves, offered until the index is ready. PRINT_START
+                // can keep the ETA on its blend before motion matching begins.
                 Item {
                     // NO-REFLOW RULE: the 16 px glyph
                     // slot is always reserved — it
@@ -347,7 +347,7 @@ ColumnLayout {
                     // ETA value sideways.
                     width: 16 * screenScaleFactor
                     height: 16 * screenScaleFactor
-                    opacity: root.printerModel != null && root.printerModel.printActive && (root.printerModel.monitorEtaBasis === "blend" || root.printerModel.improvingEta) ? 1 : 0
+                    opacity: root.printerModel != null && root.printerModel.printActive && !root.printerModel.printIndexReady ? 1 : 0
                     enabled: opacity > 0
                     HoverHandler {
                         id: tooltipHover5

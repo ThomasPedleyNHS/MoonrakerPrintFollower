@@ -3083,7 +3083,7 @@ Component {
                         // executed motions — no index, no green (the
                         // live ruling: the legend must not promise
                         // what the data cannot say).
-                        visible: root.printer != null && root.printer.plateProgressAvailable
+                        visible: root.printer != null && root.printer.plateTrackingAvailable
                         spacing: 4 * screenScaleFactor
                         Rectangle {
                             width: 10 * screenScaleFactor
@@ -3128,7 +3128,7 @@ Component {
                 // the overlay overlapped the plate.
                 PlateDownloadAction {
                     Layout.fillWidth: true
-                    visible: root.printer != null && root.printer.plateHasObjects && !root.printer.plateProgressAvailable
+                    visible: root.printer != null && root.printer.plateHasObjects && !root.printer.plateTrackingAvailable
                     printerModel: root.printer
                     idleInstruction: "Download and index the print to track the printed state."
                 }

@@ -452,6 +452,16 @@ class PlateDownloadActionTests(harness.PlateDownloadActionTests):
         label, area = self._instruction_row(document)
         self.assertNotIn("Layout", area.parentItem().metaObject().className(),
                          "the MouseArea hangs off a layout item again")
+        # Centre the icon and text together, rather than centring the
+        # text inside a full-width row with the icon left at the edge.
+        document.setProperty("idleInstruction", "Download this print")
+        self.pump(30)
+        row = label.parentItem()
+        self.assertLess(row.width(), document.width())
+        self.assertAlmostEqual(row.x() + row.width() / 2, document.width() / 2, delta=0.5)
+        self.assertLess(label.x(), 30)
+        progress = self.find(document, "plateDownloadProgressRow")
+        self.assertAlmostEqual(progress.x() + progress.width() / 2, document.width() / 2, delta=0.5)
 
     def test_the_whole_instruction_row_stays_one_click_target(self):
         document, window, printer = self._mount_action()

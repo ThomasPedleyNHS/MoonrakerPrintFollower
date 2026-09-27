@@ -538,7 +538,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                                  "pauseAtLayerHasClearable")),
         ("plateScrubVectorChanged", ("plateScrubVector",)),
         ("plateLiveScrubVectorChanged", ("plateLiveScrubVector",)),
-        ("plateProgressChanged", ("plateLayers", "plateSplit", "platePartial", "plateProgressAnchor", "plateProgressAvailable", "plateProgressReason",
+        ("plateProgressChanged", ("plateLayers", "plateSplit", "platePartial", "plateProgressAnchor", "plateProgressAvailable", "plateTrackingAvailable", "plateProgressReason",
                                   "plateLayerCount", "plateLayerMotionCount",
                                   "plateLiveLayers", "plateLiveSplit", "plateLivePartial", "plateLiveAnchor", "plateLiveAvailable",
                                   "plateNavigationData", "plateNavigationSplit",
@@ -1443,6 +1443,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         if lookup_ms is None:
             lookup_ms = getattr(snapshot, "plate_decode_ms", None)  # legacy test/snapshot
         progress = getattr(snapshot, "plate_progress", None)
+        values["plateTrackingAvailable"] = bool(progress is not None and progress.get("layers", {}).get("current") is not None)
         follower = getattr(snapshot, "plate_manual_progress", None)
         # The attached state must read the LIVE payload: the old
         # order let a stale manual payload (a detach's residue)
@@ -1902,6 +1903,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     plateSplit = value_property(QVariant, "plateSplit", plateProgressChanged, None)
     plateProgressAnchor = value_property(int, "plateProgressAnchor", plateProgressChanged, -1)
     plateProgressAvailable = value_property(bool, "plateProgressAvailable", plateProgressChanged, False)
+    plateTrackingAvailable = value_property(bool, "plateTrackingAvailable", plateProgressChanged, False)
     plateProgressReason = value_property(str, "plateProgressReason", plateProgressChanged, "")
     plateLayerCount = value_property(int, "plateLayerCount", plateProgressChanged, 0)
     plateLayerMotionCount = value_property(int, "plateLayerMotionCount", plateProgressChanged, 0)

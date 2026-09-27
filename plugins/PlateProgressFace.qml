@@ -3140,6 +3140,7 @@ Item {
             visible: root.progress == null || root.progress.reason === ""
             printerModel: root.printerModel
             idleInstruction: "Download and index this print to follow its progress."
+            textAlignment: Text.AlignHCenter
         }
     }
 

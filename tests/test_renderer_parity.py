@@ -209,6 +209,10 @@ class RendererParityTests(_parent.RealEngineTestCase):
             plot, nav_view)
         png_file(raster, "/tmp/mpf", "parity-nav-grid")
         self._printer.setNavigation("/tmp/mpf/parity-nav-grid.png")
+        # This pin measures ONE flattened image, not the unrelated live
+        # fixture's carried tail painted over our synthetic short stroke.
+        # Mark that tail included so it cannot contaminate the landmarks.
+        self._printer.setNavigationSplit(self._printer._split)
         self.pump(40)
         origin = face.mapToItem(window.contentItem(), QPointF(0.0, 0.0))
         ox, oy = int(origin.x()), int(origin.y())

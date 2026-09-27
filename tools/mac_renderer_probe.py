@@ -39,6 +39,9 @@ def main():
             return {"path": target, "error": str(exc)}
 
     report["hello"] = runner.rpc({"id": 1, "cmd": "hello"})
+    # The driver starts before Cura creates its main QQuickWindow. Both
+    # comparison legs must reach the same window boundary before probing.
+    report["window_ready"] = runner.wait_window()
     report["heartbeat"] = runner.rpc({"id": 1, "cmd": "frames", "heartbeat": True,
                                      "deadline_ms": 1500}, timeout=30)
     # Take the desktop picture FIRST: grabWindow may force a repaint and
@@ -70,6 +73,36 @@ result = {"windows": rows, "saved": saved, "null": image.isNull(),
         report["internal"] = {"error": repr(exc)}
     time.sleep(2)
     report["desktop_after_grab"] = still("-desktop-after-grab")
+    if args.phase == "after":
+        # Harness-only experiment: distinguish Cura's external GL drawing
+        # from Qt scene-graph presentation. Always restore the callback.
+        detached = False
+        try:
+            detached = runner.exec_rpc('''
+from UM.Application import Application
+main = Application.getInstance().getMainWindow()
+main.beforeRenderPassRecording.disconnect(main._render)
+main.update()
+result = True
+''', timeout=30, raise_on_error=True) is True
+            time.sleep(3)
+            report["without_external_gl"] = {"detached": detached,
+                "desktop": still("-without-external-gl")}
+        except Exception as exc:
+            report["without_external_gl"] = {"error": repr(exc)}
+        finally:
+            if detached:
+                try:
+                    report["external_gl_restored"] = runner.exec_rpc('''
+from UM.Application import Application
+from PyQt6.QtCore import Qt
+main = Application.getInstance().getMainWindow()
+main.beforeRenderPassRecording.connect(main._render, type=Qt.ConnectionType.DirectConnection)
+main.update()
+result = True
+''', timeout=30, raise_on_error=True)
+                except Exception as exc:
+                    report["external_gl_restored"] = {"error": repr(exc)}
     pid = report["hello"].get("pid")
     if pid:
         try:

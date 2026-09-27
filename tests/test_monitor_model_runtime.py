@@ -84,6 +84,7 @@ class MonitorQtTests(harness.MonitorQtTests):
         coordinator._snapshot = harness.replace(coordinator._snapshot, index_ready=True, plate_progress=None)
         model._publish()
         self.assertTrue(model.printIndexReady)
+        self.assertIn("!root.printerModel.printIndexReady", harness.JOB_SECTION_QML)
         self.assertIn("Print indexed", model.plateProgressReason)
         with harness.patch.object(model, "_request_monitor_download") as download:
             model.improveEta()
@@ -92,6 +93,17 @@ class MonitorQtTests(harness.MonitorQtTests):
         self.deliver_state("standby")
         model._publish()
         self.assertEqual(model.plateProgressReason, "No active print.")
+
+    def test_live_tracking_readiness_updates_with_both_follower_surfaces_closed(self):
+        model = self.monitor()
+        self.deliver_state("printing")
+        model.setFollowerPopoverOpen(False)
+        model._sections["plateprogress"] = False
+        self.assertFalse(model.plateTrackingAvailable)
+        self._with_layers(model, 0, 100)
+        self.assertTrue(model.plateTrackingAvailable)
+        self.assertFalse(model.plateProgressAvailable,
+                         "the closed popover must still freeze its own surface state")
 
     def test_last_action_timestamp_is_event_time_not_publication_time(self):
         from unittest.mock import patch
@@ -2587,8 +2599,12 @@ Item {
             # The picker's printed-legend row and its index offer:
             # the printed state derives from the index, so both gate
             # on its availability — inside the transient card.
-            "visible: root.printer != null && root.printer.plateProgressAvailable",
-            "visible: root.printer != null && root.printer.plateHasObjects && !root.printer.plateProgressAvailable",
+            "visible: root.printer != null && root.printer.plateTrackingAvailable",
+            "visible: root.printer != null && root.printer.plateHasObjects && !root.printer.plateTrackingAvailable",
+            # The download prompt swaps into noninteractive waiting text
+            # inside the transient plate cards once their index is ready.
+            "visible: !root.indexReady",
+            "visible: root.indexReady",
             # The scope's right-edge tick: the majors draw one full
             # line, the halves and quarters an edge pair — scene-graph
             # decoration inside the scope.
