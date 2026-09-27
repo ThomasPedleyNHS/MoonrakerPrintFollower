@@ -8,7 +8,7 @@ def plugin_log_noise(text):
     qml_names = {path.name for path in
                  (Path(__file__).resolve().parents[2] / "plugins").glob("*.qml")}
     noisy = re.compile(r"\b(?:WARNING|ERROR|TypeError|ReferenceError)\b|(?i:(?:polish|binding) loop)")
-    owned = re.compile(r"MoonrakerPrintFollower|\b(?:Moonraker|Plate|Gpu|Follower|Monitor)\w*\.qml")
+    owned = re.compile(r"MoonrakerPrintFollower")
     return [(number, line) for number, line in enumerate(text.splitlines(), 1)
             if noisy.search(line) and (owned.search(line)
                 or any(name in line for name in qml_names))]

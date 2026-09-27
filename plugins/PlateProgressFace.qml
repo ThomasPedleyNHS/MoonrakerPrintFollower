@@ -813,7 +813,7 @@ Item {
             showTravels: root.showTravels,
             currentPrefix: _prefixCandidate(),
             retainedPrefix: _retainedCandidate(),
-            heldFull: root._fullRasterSeen && root._standingFull.world === _worldKeyOf() && root.progress != null && root._fullSeenAnchor === root.progress.anchor && root._heldFullSource !== "" && _leavingFull()
+            heldFull: root._fullRasterSeen && root._standingFull != null && root._standingFull.world === _worldKeyOf() && root.progress != null && root._fullSeenAnchor === root.progress.anchor && root._heldFullSource !== "" && _leavingFull()
         });
     }
     readonly property var _presentation: _presentationDecision()

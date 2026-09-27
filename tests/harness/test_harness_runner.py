@@ -550,13 +550,14 @@ class HarvestCuraLogTests(unittest.TestCase):
         from log_gate import plugin_log_noise
         text = "\n".join((
             "WARNING CuraEngine: unrelated warning",
+            "WARNING file:///Cura/plugins/MonitorStage/MonitorMain.qml: Binding loop detected for property height",
             "DEBUG MoonrakerPrintFollower: plate position: virtualSdcard=None statusKeys=[]",
             "INFO MoonrakerPrintFollower: printer reports error state",
             "WARNING file:///plugins/MoonrakerPrintFollower/PlateProgressFace.qml: Layout polish loop detected",
             "QML PlateProgressFace.qml: TypeError: Cannot read property",
             "ERROR MoonrakerPrintFollower: preparation failed",
         ))
-        self.assertEqual([number for number, _line in plugin_log_noise(text)], [4, 5, 6])
+        self.assertEqual([number for number, _line in plugin_log_noise(text)], [5, 6, 7])
 
     def test_log_gate_checks_both_boots_and_fails_without_evidence(self):
         from log_gate import check_logs

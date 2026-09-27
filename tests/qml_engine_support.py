@@ -1275,6 +1275,12 @@ if QT_AVAILABLE:
                      "current": False, "excluded": False, "restoreAllowed": True},
                 ]
             }
+        @pyqtSlot(str, float, float, int, int, bool, float, float, float, float)
+        def setFollowerView(self, surface, scale, line_scale, width, height,
+                            compact, pan_x, pan_y, backing, width_px):
+            self.last_follower_view = (surface, scale, line_scale, width, height,
+                                       compact, pan_x, pan_y, backing, width_px)
+
         @pyqtSlot()
         def seekAnchorTicked(self):
             # The debounce's raw tick (the model stamps it for the

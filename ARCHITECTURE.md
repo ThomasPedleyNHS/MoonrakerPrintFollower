@@ -1120,3 +1120,20 @@ a diagnostic instead of silently leaving a layer pending.
 Native and Linux harnesses use `tests/harness/log_gate.py` to reject plugin
 warnings, errors and QML binding/polish loops. Native first-install and migration
 legs include both boots' logs. Missing evidence fails the gate.
+
+### Object-outline retention
+
+The Exclude Object Picker retains the grid and each object's native outline
+separately. Hover/current-state width changes rebuild only affected outlines;
+colour changes update materials, and pan changes the parent transform. Object
+removal releases its nodes, and geometry/scale changes invalidate the relevant
+outline. The same capsule triangles, round caps, widths and palette are used.
+
+A Windows CPU microbenchmark during RC review measured 49 rectangular objects
+at roughly 7.4 ms to expand the complete bed, versus 1.1 ms for a retained hover
+update. A synthetic stress case (256 objects with 64 edges each, not the user's
+rectangular print) measured roughly 837 ms versus 9.3 ms. These are local CPU
+measurements, not end-to-end FPS guarantees. A separate prefix-copy probe measured
+about 0.15 ms for 10,000 segments and 2.15 ms for 100,000; it does not measure
+Qt allocation or driver upload. Chunking that path remains a profiling-led
+follow-up, not a demonstrated correctness defect or an RC architecture change.

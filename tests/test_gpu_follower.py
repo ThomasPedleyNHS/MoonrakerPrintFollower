@@ -380,6 +380,52 @@ Item {
         payload = {"classes": {"SKIN": [[[i, 0, i] for i in range(100000)]]}}
         self.assertEqual(prepare((("current", payload),), cancel), ())
 
+    def test_picker_retains_unaffected_geometry_for_hover_pan_and_palette(self):
+        from PyQt6 import sip
+        from plugins import GpuObjectPicker as module
+        item = module.GpuObjectPicker()
+        node = None
+        scene = {
+            'objects': [{'name': str(i), 'polygon': [[i, 0], [i+1, 0], [i+1, 1]]}
+                        for i in range(3)],
+            'plot': {'sx': 2, 'sy': 2, 'bed': {'bedXMax': 250, 'bedYMax': 250}},
+            'showGrid': True, 'gridThin': '#333333', 'gridMajor': '#444444',
+            'includedInk': '#ffffff', 'currentInk': '#0000ff',
+            'excludedInk': '#ff0000', 'halo': '#000000',
+        }
+        try:
+            with patch.object(module, 'object_strokes', wraps=module.object_strokes) as build:
+                item.scene = scene
+                node = item.updatePaintNode(None, None)
+                self.assertEqual(build.call_count, 3)
+                grid = node._grid_node.firstChild()
+                unchanged = node._objects[2].firstChild()
+                item.scene = dict(scene, hoveredName='0')
+                node = item.updatePaintNode(node, None)
+                self.assertEqual(build.call_count, 4)
+                item.scene = dict(scene, hoveredName='1')
+                node = item.updatePaintNode(node, None)
+                self.assertEqual(build.call_count, 6)
+                item.scene = dict(item.scene, includedInk='#00ff00',
+                                  plot=dict(scene['plot'], bed=dict(scene['plot']['bed'], offsetX=25)))
+                node = item.updatePaintNode(node, None)
+                self.assertEqual(build.call_count, 6, 'pan/palette rebuilt geometry')
+                self.assertIs(node._grid_node.firstChild(), grid)
+                self.assertIs(node._objects[2].firstChild(), unchanged)
+                outline = unchanged.nextSibling()
+                self.assertEqual(outline.material().color().name(), '#00ff00')
+                # Removing objects releases their native groups; an empty bed
+                # cannot retain an excluded object's old outline.
+                removed = node._objects[-1]
+                item.scene = dict(item.scene, objects=scene['objects'][:1])
+                node = item.updatePaintNode(node, None)
+                self.assertEqual(len(node._objects), 1)
+                self.assertTrue(sip.isdeleted(removed))
+        finally:
+            if node is not None:
+                sip.delete(node)
+            sip.delete(item)
+
     def test_picker_preserves_state_precedence_halo_widths_and_hover(self):
         from plugins.GpuObjectPicker import object_strokes
         polygon = [[0, 0], [10, 0], [10, 10], [0, 10]]

@@ -14,10 +14,13 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
                 self._pump_ms(80)
                 self.assertFalse(window.grabWindow().isNull())
             face.setProperty("progress", self.PAYLOAD)
+            face.setProperty("_fullRasterSeen", True)
+            face.setProperty("_standingFull", None)
             self._pump_ms(80)
         messages = harness._APPLICATION["messages"][start:]
         self.assertEqual([], [line for line in messages
-                              if "polish" in line.lower() or "binding loop" in line.lower()])
+                              if "polish" in line.lower() or "binding loop" in line.lower()
+                              or "TypeError" in line])
 
     def test_colour_keys_preserve_canvas_geometry_and_paint_gradients(self):
         from PyQt6.QtCore import QPointF

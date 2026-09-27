@@ -4,10 +4,21 @@ import math
 
 from PyQt6.QtCore import pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QMatrix4x4
-from PyQt6.QtQuick import QQuickItem, QSGTransformNode, QQuickWindow, QSGRendererInterface
+from PyQt6.QtQuick import QQuickItem, QSGNode, QSGTransformNode, QQuickWindow, QSGRendererInterface
 from PyQt6 import sip
 
 from .GpuFollower import GpuFollower, stroke_geometry
+
+
+def object_style(scene, row):
+    """State precedence and pixel widths shared by retained and cold paths."""
+    compact_scale = .5 if scene.get('compact') else 1
+    width = (3 if row.get('name') == scene.get('hoveredName') else
+             2.5 if row.get('current') else 1.5) * compact_scale
+    colour = scene.get('excludedInk') if row.get('excluded') else (
+        scene.get('currentInk') if row.get('current') else
+        scene.get('passedInk') if row.get('passed') else scene.get('includedInk'))
+    return width, colour
 
 
 def object_strokes(scene):
@@ -28,11 +39,7 @@ def object_strokes(scene):
         packed = array('f')
         for a, b in zip(points, list(points[1:]) + [points[0]], strict=False):
             packed.extend((a[0], a[1], b[0], b[1]))
-        width = (3 if row.get('name') == scene.get('hoveredName') else
-                 2.5 if row.get('current') else 1.5) * compact_scale
-        colour = scene.get('excludedInk') if row.get('excluded') else (
-            scene.get('currentInk') if row.get('current') else
-            scene.get('passedInk') if row.get('passed') else scene.get('includedInk'))
+        width, colour = object_style(scene, row)
         data = (('', '', (), packed.tobytes()),)
         for stroke_width, ink in ((width + 4 * compact_scale, scene.get('halo')), (width, colour)):
             result.append((stroke_geometry(data, stroke_width, sx, sy)[0][3], QColor(ink)))
@@ -69,8 +76,11 @@ class GpuObjectPicker(QQuickItem):
         if getattr(node, '_scene', None) == scene:
             return node
         node._scene = scene
-        while node.firstChild() is not None:
-            sip.delete(node.firstChild())
+        if not hasattr(node, '_objects'):
+            node._grid_node = QSGTransformNode()
+            node.appendChildNode(node._grid_node)
+            node._grid_key = None
+            node._objects = []
         plot = scene.get('plot') or {}
         bed = plot.get('bed') or {}
         sx, sy = plot.get('sx', 1), plot.get('sy', 1)
@@ -79,14 +89,49 @@ class GpuObjectPicker(QQuickItem):
                          bed.get('offsetY', 0) + bed.get('bedYMax', 0) * sy)
         matrix.scale(sx, -sy)
         node.setMatrix(matrix)
+        key = None
         if scene.get('showGrid'):
             key = (tuple(bed.get(k, 0) for k in ('bedXMin', 'bedXMax', 'bedYMin', 'bedYMax')),
                    bool(scene.get('compact')), QColor(scene.get('gridThin')).rgba(),
                    QColor(scene.get('gridMajor')).rgba(), sx, sy)
-            GpuFollower._grid(self, node, key)
-        for data, colour in object_strokes(scene):
-            child = self._node(node, colour, True)
-            self._vertices(child, data, len(data) // 8, 1)
+        if key != node._grid_key:
+            while node._grid_node.firstChild() is not None:
+                sip.delete(node._grid_node.firstChild())
+            if key is not None:
+                GpuFollower._grid(self, node._grid_node, key)
+            node._grid_key = key
+        rows = scene.get('objects') or ()
+        while len(node._objects) > len(rows):
+            sip.delete(node._objects.pop())
+        while len(node._objects) < len(rows):
+            group = QSGTransformNode()
+            group._geometry_key = None
+            node.appendChildNode(group)
+            node._objects.append(group)
+        for row, group in zip(rows, node._objects, strict=True):
+            # Retain each object's native geometry independently. Hover and
+            # live state changes usually affect just one or two objects; pan
+            # only changes the parent matrix. Neither rebuilds the whole bed.
+            width, colour = object_style(scene, row)
+            geometry_key = (tuple(tuple(point) for point in row.get('polygon') or ()),
+                            tuple(row.get('center') or ()), width,
+                            bool(scene.get('compact')), scene.get('screenScale', 1), sx, sy)
+            if geometry_key != group._geometry_key:
+                while group.firstChild() is not None:
+                    sip.delete(group.firstChild())
+                for data, ink in object_strokes(dict(scene, objects=[row])):
+                    child = self._node(group, ink, True)
+                    self._vertices(child, data, len(data) // 8, 1)
+                group._geometry_key = geometry_key
+            child = group.firstChild()
+            for ink in (QColor(scene.get('halo')), QColor(colour)):
+                if child is None:
+                    break
+                material = child.material()
+                if material.color() != ink:
+                    material.setColor(ink)
+                    child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)
+                child = child.nextSibling()
         return node
 
     _node = staticmethod(GpuFollower._node)
