@@ -10,13 +10,13 @@ import Cura 1.1 as Cura
 // clips its children, and the sweep's position is a binding on the
 // 0..1 phase (qualified through the bar's id: unqualified names do
 // NOT resolve through the visual parent).
-RowLayout {
+Item {
     id: root
     property bool busy: false
     property real progress: -1
     property string phase: ""
 
-    spacing: UM.Theme.getSize("narrow_margin").width
+    readonly property real spacing: UM.Theme.getSize("narrow_margin").width
     // A FIXED height (the label's natural line height — stable font
     // metrics, not a layout feedback): the busy flip repaints the
     // content without changing the layout's size. A visible-toggle
@@ -31,6 +31,9 @@ RowLayout {
     // on root's properties track them.
     RowLayout {
         id: content
+        // The fixed outer Item reserves one row without another layout
+        // solver resizing this row as its busy content appears/disappears.
+        anchors.fill: parent
         objectName: "loadIndicatorContent"
         visible: root.busy
         spacing: root.spacing

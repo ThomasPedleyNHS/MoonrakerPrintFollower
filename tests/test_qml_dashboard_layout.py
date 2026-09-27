@@ -402,3 +402,36 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
                            improveEtaProgress=.5), dict(base, printIndexReady=True, monitorLayer="2 / 100",
                            monitorLayerProgress=.3, monitorEta="00:10:00", monitorPositionX="10.0",
                            monitorPositionY="20.0", monitorPositionZ=".4")])
+
+
+class PreviewLoadingSizeTests(harness.RealEngineTestCase):
+    def test_busy_phase_changes_preserve_the_row_and_fill_its_width(self):
+        indicator = self.mount("LoadProgressIndicator.qml")
+        window = harness.QQuickWindow()
+        window.resize(500, 100)
+        indicator.setParentItem(window.contentItem())
+        self.addCleanup(window.deleteLater)
+        window.show()
+        content = self.find(indicator, "loadIndicatorContent")
+        start = len(harness._APPLICATION["messages"])
+        for width in (300, 220, 344):
+            indicator.setWidth(width)
+            self._pump_ms(30)
+            row_height = indicator.height()
+            for busy, progress, phase in ((True, -1, "Resolving"), (True, .25, "Downloading"),
+                                          (True, -1, "Indexing"), (True, 1, "Rendering"),
+                                          (False, -1, ""), (True, .8, "Downloading")):
+                indicator.setProperty("phase", phase)
+                indicator.setProperty("progress", progress)
+                indicator.setProperty("busy", busy)
+                self._pump_ms(30)
+                self.assertAlmostEqual(indicator.height(), row_height, delta=.5)
+                self.assertEqual(content.isVisible(), busy)
+                self.assertAlmostEqual(content.width(), width, delta=.5)
+                if busy:
+                    items = [item for item in content.childItems() if item.isVisible() and item.width() > 0]
+                    self.assertEqual(len(items), 3)
+                    self.assertGreater(items[1].width(), 30, "the progress bar must have usable width")
+                    self.assertLessEqual(items[-1].x() + items[-1].width(), width + .5)
+        self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
+                          if "polish loop" in line.lower() or "binding loop" in line.lower()])

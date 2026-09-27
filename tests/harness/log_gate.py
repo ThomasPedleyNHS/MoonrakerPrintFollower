@@ -3,6 +3,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime
 import json
+import math
 import re
 import sys
 
@@ -39,6 +40,11 @@ def check_logs(paths, evidence=None):
                 start, end = float(window["start"]), float(window["end"])
                 if not 0 < start <= end < float("inf"):
                     raise ValueError("invalid fault window")
+                # Cura records milliseconds, while the runner records full
+                # precision. Include the boundary millisecond: Qt can round
+                # a warning at .204754 to .205 without leaving the scenario.
+                start = math.floor(start * 1000) / 1000
+                end = math.ceil(end * 1000) / 1000
                 windows.append((start, end, re.compile(window["pattern"])))
         except (OSError, ValueError, AttributeError, TypeError, KeyError, re.error) as exc:
             print(f"ui_test: invalid log-gate evidence: {exc}", file=sys.stderr)

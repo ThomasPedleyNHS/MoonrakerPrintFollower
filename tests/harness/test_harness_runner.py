@@ -601,6 +601,13 @@ class HarvestCuraLogTests(unittest.TestCase):
             self.assertEqual(check_logs([log], evidence), 1)
             log.write_text(warning.replace("unauthorized", "disconnected"), encoding="utf-8")
             self.assertEqual(check_logs([log], evidence), 1)
+            evidence.write_text(json.dumps({"expected_log_windows": [{
+                "start": stamp - 1, "end": stamp + .204754,
+                "pattern": r"MoonrakerHTTP GET core::status failed: unauthorized"}]}), encoding="utf-8")
+            log.write_text(warning.replace(",000", ",205"), encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 0)
+            log.write_text(warning.replace(",000", ",206"), encoding="utf-8")
+            self.assertEqual(check_logs([log], evidence), 1)
 
     def test_log_gate_checks_both_boots_and_fails_without_evidence(self):
         from log_gate import check_logs

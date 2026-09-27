@@ -15,7 +15,6 @@ Item {
     // late telemetry/preset rows recursively polish both layout solvers.
     readonly property real sideMargin: UM.Theme.getSize("narrow_margin").width + UM.Theme.getSize("section_icon").width / 2
     readonly property real verticalMargin: UM.Theme.getSize("default_margin").height
-    implicitWidth: sectionBody.implicitWidth + 2 * sideMargin
     implicitHeight: sectionHeader.height + (sectionBody.visible ? sectionBody.implicitHeight + 2 * verticalMargin : 0)
     property var printerModel: null
     // The tuple rule (the live ruling): if ANY axis value is
@@ -32,7 +31,7 @@ Item {
         sectionId: "job"
         sectionIcon: "Printer"
     }
-    ColumnLayout {
+    Column {
         id: sectionBody
         x: root.sideMargin
         y: sectionHeader.height + root.verticalMargin
@@ -41,7 +40,7 @@ Item {
         spacing: UM.Theme.getSize("default_margin").height
 
         Row {
-            Layout.fillWidth: true
+            width: parent.width
             spacing: UM.Theme.getSize("default_margin").width
             UM.Label {
                 // The two status lines carry labels
@@ -68,7 +67,7 @@ Item {
         UM.Label {
             text: root.printerModel != null && root.printerModel.monitorFilename.length > 0 ? root.printerModel.monitorFilename : "No active file"
             color: UM.Theme.getColor("text_inactive")
-            Layout.fillWidth: true
+            width: parent.width
             elide: Text.ElideMiddle
         }
 
@@ -79,7 +78,7 @@ Item {
             // objectName stays on the VALUE label so
             // the harness's rendered-text assertions
             // keep reading the raw message.
-            Layout.fillWidth: true
+            width: parent.width
             spacing: UM.Theme.getSize("default_margin").width
             UM.Label {
                 width: 64 * screenScaleFactor
@@ -109,11 +108,11 @@ Item {
         // layer fill the top half, touching at the centre — no gap.
         // Without layer info the print fill takes the whole height.
         Item {
-            Layout.fillWidth: true
+            width: parent.width
             // Double the strip's height (the live ruling): with all
             // three fills stacked the original 10 px was too tiny to
             // read the sections.
-            Layout.preferredHeight: 20 * screenScaleFactor
+            height: 20 * screenScaleFactor
             HoverHandler {
                 id: tooltipHover1
             }
@@ -203,7 +202,7 @@ Item {
         }
 
         Row {
-            Layout.alignment: Qt.AlignHCenter
+            x: (parent.width - width) / 2
             spacing: 4 * screenScaleFactor
             UM.Label {
                 text: root.printerModel != null ? root.printerModel.monitorProgress.toFixed(2) + "%" : "0.00%"
@@ -241,7 +240,7 @@ Item {
             columns: 2
             columnSpacing: UM.Theme.getSize("default_margin").width
             rowSpacing: UM.Theme.getSize("default_margin").height / 2
-            Layout.fillWidth: true
+            width: parent.width
 
             // "Last action": the shared one-shot
             // lane's status row, first in the grid so
