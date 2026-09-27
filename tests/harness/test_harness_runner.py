@@ -546,6 +546,29 @@ class HarvestCuraLogTests(unittest.TestCase):
         self.assertEqual(runner.harvest_cura_log(str(self.dest)), 0)
         self.assertEqual(list(self.dest.iterdir()), [])
 
+    def test_log_gate_distinguishes_plugin_defects_from_other_boot_noise(self):
+        from log_gate import plugin_log_noise
+        text = "\n".join((
+            "WARNING CuraEngine: unrelated warning",
+            "DEBUG MoonrakerPrintFollower: plate position: virtualSdcard=None statusKeys=[]",
+            "INFO MoonrakerPrintFollower: printer reports error state",
+            "WARNING file:///plugins/MoonrakerPrintFollower/PlateProgressFace.qml: Layout polish loop detected",
+            "QML PlateProgressFace.qml: TypeError: Cannot read property",
+            "ERROR MoonrakerPrintFollower: preparation failed",
+        ))
+        self.assertEqual([number for number, _line in plugin_log_noise(text)], [4, 5, 6])
+
+    def test_log_gate_checks_both_boots_and_fails_without_evidence(self):
+        from log_gate import check_logs
+        first = self.dest / "cura.log-boot1"
+        second = self.dest / "cura.log"
+        first.write_text("WARNING MoonrakerPrintFollower: first boot defect", encoding="utf-8")
+        second.write_text("INFO MoonrakerPrintFollower: ready", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(check_logs([first, second]), 1)
+            self.assertEqual(check_logs([second]), 0)
+            self.assertEqual(check_logs([]), 1)
+
 
 class StaticLegTests(unittest.TestCase):
     """The static-green class: a leg whose screen does not move.
@@ -714,7 +737,8 @@ class StaticLegTests(unittest.TestCase):
         source = Path(runner.__file__).read_text(encoding="utf-8")
         tail = source[source.index("if __name__ =="):]
         self.assertNotIn("_rc = _rc or static_leg_report", tail)
-        self.assertIn("sys.exit(_rc or _static_rc)", tail)
+        self.assertIn("_log_rc = check_logs(", tail)
+        self.assertIn("sys.exit(_rc or _static_rc or _log_rc)", tail)
 
     def test_a_scenario_that_delivered_no_frame_is_named(self):
         # The probe's verdict is a reading of the END sample: a window

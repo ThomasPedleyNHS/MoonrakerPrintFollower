@@ -58,6 +58,28 @@ def legacy_reference(data: bytes):
 
 
 class IndexTests(unittest.TestCase):
+    def test_startup_removes_only_abandoned_index_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = os.path.join(directory, "p-print")
+            os.makedirs(folder)
+            names = ("index.mpfi.gz.tmp-4294967296-1-1",
+                     f"index.mpfi.gz.tmp-{os.getpid()}-1-1",
+                     "prepared.mpfp.tmp-4294967296-1", "notes.tmp-4294967296-1")
+            for name in names:
+                with open(os.path.join(folder, name), "wb") as handle:
+                    handle.write(b"partial")
+            PersistentIndexCache(directory)
+            self.assertEqual(sorted(os.listdir(folder)), sorted(names[1:]))
+
+    def test_eviction_preserves_another_live_writer(self):
+        from plugins.CachePolicy import evict_to_budget
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, f"index.mpfi.gz.tmp-{os.getpid()}-1-1")
+            with open(path, "wb") as handle:
+                handle.write(b"partial")
+            self.assertEqual(evict_to_budget({directory: (1, 7)}, 1, None, None), (7, 1))
+            self.assertTrue(os.path.isfile(path))
+
     def test_the_marker_winner_is_decided_once_per_file(self):
         # The critic's catch: an earlier-ordered marker must win the
         # WHOLE file even when a later-ordered marker's line appears

@@ -29,12 +29,11 @@ from __future__ import annotations
 
 import os
 import struct
-import sys
 import threading
 import time
 from typing import Optional
 
-from .CachePolicy import evict_to_budget
+from .CachePolicy import evict_to_budget, temporary_owner_alive
 
 try:
     from UM.Logger import Logger as _Logger
@@ -50,44 +49,6 @@ def _log(message, *args):
     if _Logger is not None:
         _Logger.log("i", message, *args)
 
-
-def _windows_liveness(pid: int) -> bool:
-    """The Windows owner-liveness verdict through the native process
-    API, dependency-free: a query-limited handle opens only while
-    the process OBJECT exists, and its exit code leaves
-    STILL_ACTIVE once the process is gone — so a child that exited
-    and was waited reads dead even while its zombie object lingers
-    in the waiter. ERROR_INVALID_PARAMETER names no live process
-    (dead); every other failure is indeterminate and keeps the tmp
-    (conservative)."""
-    import ctypes
-    from ctypes import wintypes
-    # Explicit Win32 signatures (the review's 64-bit hardening): a
-    # HANDLE is pointer-sized, so the default c_int restype would
-    # truncate it; use_last_error makes the failure verdict read
-    # from ctypes.get_last_error() coherently.
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    _STILL_ACTIVE = 259
-    _OpenProcess = kernel32.OpenProcess
-    _OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    _OpenProcess.restype = wintypes.HANDLE
-    _GetExitCodeProcess = kernel32.GetExitCodeProcess
-    _GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
-    _GetExitCodeProcess.restype = wintypes.BOOL
-    _CloseHandle = kernel32.CloseHandle
-    _CloseHandle.argtypes = [wintypes.HANDLE]
-    _CloseHandle.restype = wintypes.BOOL
-    handle = _OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return ctypes.get_last_error() != 87  # 87: no such process
-    try:
-        code = wintypes.DWORD()
-        if not _GetExitCodeProcess(handle, ctypes.byref(code)):
-            return True  # indeterminate — keep the tmp
-        return code.value == _STILL_ACTIVE
-    finally:
-        _CloseHandle(handle)
 
 _MAGIC = b"MPFP"
 _FORMAT_VERSION = 6
@@ -182,35 +143,7 @@ class PreparedCache:
             return
 
     def _tmp_liveness(self, name: str) -> bool:
-        """The owner-liveness probe (the review's Windows-portability
-        finding): True when the tmp's owning process may still be
-        alive, False when the owner is provably gone or never
-        existed. The probe is deliberately CONSERVATIVE — an owner
-        that cannot be disproved keeps its tmp; only a provably dead
-        or impossible owner releases it for adoption. Windows reads
-        the native process API (never the POSIX signal idiom):
-        ALIVE or MAYBE-ALIVE -> True, PROVABLY DEAD -> False."""
-        try:
-            pid = int(name.split(".tmp-", 1)[1].split("-", 1)[0])
-        except (IndexError, ValueError):
-            return False  # no live writer ever stamped this name
-        if pid <= 0:
-            return False  # impossible: writers stamp their real pid
-        if pid > 0xFFFFFFFF:
-            return False  # beyond any platform's pid space
-        if sys.platform == "win32":
-            return _windows_liveness(pid)
-        try:
-            os.kill(pid, 0)
-            return True
-        except ProcessLookupError:
-            return False  # no such process
-        except PermissionError:
-            return True  # cannot disprove the owner — keep the tmp
-        except OverflowError:
-            return False  # beyond the platform's pid space
-        except OSError:
-            return True  # indeterminate — keep the tmp
+        return temporary_owner_alive(name)
 
     def _tmp_sound(self, path: str) -> bool:
         """The checkpointed tmp's own validity: the header parses and
@@ -296,13 +229,6 @@ class PreparedCache:
         or None when the file is absent, partial, or belongs to
         another identity."""
         path = self._path(identity)
-        # The explicit recency: atime is
-        # unreliable under relatime/noatime — a successful open
-        # stamps the entry itself.
-        try:
-            os.utime(path, None)
-        except OSError:
-            pass
         try:
             with open(path, "rb") as handle:
                 header = handle.read(struct.calcsize(_HEADER_FMT))
@@ -324,6 +250,11 @@ class PreparedCache:
                 size = os.fstat(handle.fileno()).st_size
                 if not _valid_table(table, handle.tell(), size):
                     return None
+                # Only a validated, usable table refreshes explicit recency.
+                try:
+                    os.utime(path, None)
+                except OSError:
+                    pass
                 return {"table": table, "complete": bool(complete)}
         except OSError:
             return None
@@ -617,7 +548,9 @@ class PreparedCache:
                              if name.endswith((".mpfp", ".mpfi.gz"))]
                     if not stats:
                         continue
-                    totals[root] = (max(stat.st_atime for stat in stats),
+                    # mtime is explicitly refreshed only after validation;
+                    # OS access times also change for rejected cache reads.
+                    totals[root] = (max(stat.st_mtime for stat in stats),
                                     sum(stat.st_size for stat in stats))
                 except OSError:
                     continue

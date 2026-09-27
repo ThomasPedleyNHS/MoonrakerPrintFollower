@@ -1293,6 +1293,17 @@ class CameraBridgeTests(unittest.TestCase):
         self.assertEqual(nam.gets, [])
         self.assertEqual(bridge._relayed_bytes, 0)
 
+    def test_camera_target_cannot_rehome_the_key(self):
+        from PyQt6.QtNetwork import QTcpSocket
+        bridge = self._bridge("http://printer.invalid:7125", "test-key")
+        nam = self._recording_nam(bridge)
+        socket = QTcpSocket()
+        self.addCleanup(socket.abort)
+        for path in ("@other.invalid/stream", "//other.invalid/stream",
+                     "http://other.invalid/stream", "/stream#fragment", "/stream\r\nx: y"):
+            bridge._start_upstream(socket, path)
+        self.assertEqual(nam.gets, [])
+
     def test_the_bridge_reads_header_text_whatever_qt_hands_it(self):
         header_text = self.module.CameraBridge._header_text
         self.assertEqual(header_text(b"OK", "fallback"), "OK")

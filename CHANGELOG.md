@@ -49,6 +49,10 @@ the indexed toolpath.
   aligned consistently. The temperature chart retains its own one-second
   sampling clock.
 
+- **RC hardening** — bounded WebSocket, thumbnail and upload-response buffers;
+  same-origin authenticated camera forwarding; XYZ G92-aware live coordinates;
+  validated cache recency and abandoned index-temp cleanup. GPU preparation
+  failures are reported, and the picker discloses its 256-object map limit.
 
 Implementation and compatibility notes:
 

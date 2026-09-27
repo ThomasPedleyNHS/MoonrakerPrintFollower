@@ -54,6 +54,23 @@ if harness.QT_AVAILABLE:
 
 
 class PlateCanvasHitTests(harness.PlateCanvasHitTests):
+    def test_the_picker_discloses_omitted_objects_without_an_extra_row(self):
+        window, face, canvas = self._picker(self._polygon_bed())
+        before = (face.width(), face.height())
+        self._printer._plate = dict(self._printer._plate, truncated=17)
+        self._printer.plateObjectsChanged.emit()
+        self._pump_ms(80)
+        pending = [window.contentItem()]
+        texts = []
+        while pending:
+            item = pending.pop()
+            if item.metaObject().indexOfProperty("text") >= 0:
+                texts.append(str(item.property("text")))
+            pending.extend(item.childItems())
+        self.assertIn("17 objects omitted from this map (256-object limit)", texts)
+        self.assertEqual(before, (face.width(), face.height()))
+
+
     def test_a_click_near_the_polygon_edge_selects_the_object(self):
         rows = self._polygon_bed()
         window, face, canvas = self._picker(rows)
@@ -85,7 +102,8 @@ class PlateCanvasHitTests(harness.PlateCanvasHitTests):
         self.assertEqual(name, "Right_Block")
         self.assertLessEqual(distance, self._radius_px(canvas),
                              "the fixture no longer pins the wrong-centre case")
-        self.assertEqual(self._hover(window, canvas, face, *point), "Left_Block")
+        self.assertEqual(self._hover(window, canvas, face, *point), "Left_Block",
+                         self._last_hover_evidence)
         # The neighbour answers on its own geometry, not on proximity.
         inside = (202.0, 232.0)
         self.assertEqual(self._containing(rows, *inside), ["Right_Block"])
@@ -144,7 +162,8 @@ class PlateCanvasHitTests(harness.PlateCanvasHitTests):
         # destructive gesture must act on the object the hover
         # highlighted, at every step of the gesture.
         point = (188.0, 226.0)
-        self.assertEqual(self._hover(window, canvas, face, *point), "Left_Block")
+        self.assertEqual(self._hover(window, canvas, face, *point), "Left_Block",
+                         self._last_hover_evidence)
         for _ in range(3):
             self._click_bed(window, canvas, face, *point)
         self.pump(20)

@@ -996,8 +996,12 @@ class ThumbReply:
     def error(self):
         return self._error
 
+    def read(self, size):
+        data, self._body = self._body[:size], self._body[size:]
+        return data
+
     def readAll(self):
-        return self._body
+        return self.read(len(self._body))
 
     def deleteLater(self):
         self.disposed += 1
@@ -1010,6 +1014,29 @@ class ThumbReply:
 
 class ThumbnailTests(ServiceCase):
     PNG = b"\x89PNG\r\n\x1a\nthumbnail-bytes"
+
+    def test_chunked_response_is_bounded_before_completion(self):
+        from unittest.mock import Mock
+        reply = ScriptedReply(body=b"1234")
+        reply.abort = Mock()
+        self.service._watch_reply_body(reply, 8)
+        reply.readyRead.emit()
+        self.assertEqual(bytes(reply._mpf_body), b"1234")
+        reply._body = b"56789" * 100
+        reply.readyRead.emit()
+        reply.abort.assert_called_once()
+        self.assertEqual(bytes(reply._mpf_body), b"")
+        self.assertTrue(reply._mpf_body_overflow)
+        self.assertGreater(len(reply._body), 0)  # surplus never copied
+        with self.assertRaises(ValueError):
+            self.service._take_reply_body(reply, 8)
+
+    def test_response_exactly_at_cap_preserves_all_chunks(self):
+        reply = ScriptedReply(body=b"1234")
+        self.service._watch_reply_body(reply, 8)
+        reply.readyRead.emit()
+        reply._body = b"5678"
+        self.assertEqual(self.service._take_reply_body(reply, 8), b"12345678")
 
     def thumb_row(self, name="a.gcode"):
         return FileRow(filename=name, relpath=name, thumb_path=".thumbs/a-300x300.png",
@@ -1283,6 +1310,10 @@ if QT_AVAILABLE:
 
         finished = pyqtSignal()
         uploadProgress = pyqtSignal(int, int)
+        readyRead = pyqtSignal()
+
+        def setReadBufferSize(self, size):
+            self.buffer_size = size
 
         def __init__(self, body=b"", error=None):
             super().__init__()
@@ -1296,8 +1327,12 @@ if QT_AVAILABLE:
         def errorString(self):
             return "simulated transport failure"
 
+        def read(self, size):
+            data, self._body = self._body[:size], self._body[size:]
+            return data
+
         def readAll(self):
-            return self._body
+            return self.read(len(self._body))
 
         def deleteLater(self):
             self.disposed += 1

@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-from .CachePolicy import evict_to_budget
+from .CachePolicy import evict_to_budget, sweep_index_temps
 from array import array
 from bisect import bisect_right
 from dataclasses import dataclass, field
@@ -2025,6 +2025,7 @@ class PersistentIndexCache:
         # silently override a 4096 MiB selection for small prints).
         self.max_entries = None if max_entries is None else max(1, int(max_entries))
         os.makedirs(self.directory, exist_ok=True)
+        sweep_index_temps(self.directory)
 
     def _path(self, identity: RemoteFileIdentity) -> str:
         digest = hashlib.sha256(identity.stable_key().encode("utf-8")).hexdigest()
@@ -2435,6 +2436,7 @@ class PersistentIndexCache:
         never an mtime guess) always survives; if it alone exceeds a
         budget, that is the only acceptable overage."""
         try:
+            sweep_index_temps(self.directory)
             # The print-level totals: one entry per print folder, its
             # size the sum of every representation inside it.
             totals = {}

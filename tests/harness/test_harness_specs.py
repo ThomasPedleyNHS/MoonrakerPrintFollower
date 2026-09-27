@@ -61,8 +61,7 @@ class HarnessSpecTests(unittest.TestCase):
         with open(script, encoding="utf-8") as handle:
             source = handle.read()
         self.assertIn("scan_cura_log", source)
-        self.assertIn("grep -nE 'MoonrakerPrintFollower|/Moonraker[A-Za-z]+\\.qml'", source)
-        self.assertIn("CURA LOG NOISE (the log-scan ruling)", source)
+        self.assertIn("tests/harness/log_gate.py", source)
         self.assertIn("|| RUNNER_RC=$?", source)
         self.assertIn('if [ "${RUNNER_RC:-0}" -ne 0 ]; then', source)
 

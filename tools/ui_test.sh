@@ -88,14 +88,7 @@ scan_cura_log() {
     # Every boot's log (the first-install leg boots twice and the
     # second launch truncates the log file): a first boot's warning
     # must not go unseen because a later boot overwrote the file.
-    scan="$(grep -nE 'MoonrakerPrintFollower|/Moonraker[A-Za-z]+\.qml' "$WORK_DIR"/cura_run*.log 2>/dev/null \
-        | grep -E 'WARNING|ERROR|polish loop' || true)"
-    if [ -n "$scan" ]; then
-        echo "ui_test: CURA LOG NOISE (the log-scan ruling) - fix the code, never the filter:" >&2
-        echo "$scan" >&2
-        exit 1
-    fi
-    echo "ui_test: cura.log scan clean"
+    python3 "$root/tests/harness/log_gate.py" "$WORK_DIR"/cura_run*.log
 }
 # The deterministic scratch root. Everything a run needs lives
 # under it and is CREATED here, never assumed — /tmp does not
@@ -530,6 +523,7 @@ cp "$root/tests/harness/runner.py" "$WORK_DIR"/harness_runner.py
 # The runner's platform dispatch rides beside it (the staged runner is
 # imported from this directory), so the flat copy keeps working.
 cp "$root/tests/harness/native_host.py" "$WORK_DIR"/native_host.py
+cp "$root/tests/harness/log_gate.py" "$WORK_DIR"/log_gate.py
 cp "$root/tests/harness/window_geometry.py" "$WORK_DIR"/window_geometry.py
 cp "$root/tests/harness/scenarios.py" "$WORK_DIR"/scenarios.py
 cp "$root/tests/harness/scenario_map.py" "$WORK_DIR"/scenario_map.py

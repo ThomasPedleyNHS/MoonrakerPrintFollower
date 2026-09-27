@@ -11,7 +11,7 @@ import struct
 import threading
 import time
 
-from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot, qWarning
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QMatrix4x4, QGuiApplication
 from PyQt6.QtQuick import (
@@ -280,6 +280,7 @@ class GpuFollower(QQuickItem):
     settingsChanged = pyqtSignal()
     readyChanged = pyqtSignal()
     prepared = pyqtSignal(int, object)
+    preparationFailed = pyqtSignal(int, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -295,8 +296,10 @@ class GpuFollower(QQuickItem):
         self._generation = 0
         self._preparing_generation = None
         self._data = ()
+        self._error = ""
         self._render_generation = -1
         self.prepared.connect(self._prepared)
+        self.preparationFailed.connect(self._preparation_failed)
 
     @pyqtProperty(QObject, notify=dataSourceChanged)
     def dataSource(self):
@@ -332,6 +335,7 @@ class GpuFollower(QQuickItem):
         self._layers = source._layers if source is not None else {}
         self._generation = source._generation if source is not None else 0
         self._preparing_generation = source._preparing_generation if source is not None else None
+        self._error = source._error if source is not None else ""
         self.readyChanged.emit()
         self.update()
 
@@ -385,6 +389,7 @@ class GpuFollower(QQuickItem):
             return
         previous = self._layers
         self._layers = value
+        self._error = ""
         self._generation += 1
         generation = self._generation
         self._preparing_generation = generation
@@ -408,12 +413,20 @@ class GpuFollower(QQuickItem):
         )
 
         def build():
-            data = pack_shader(prepare(payloads, cancel), cancel)
+            error = ""
+            try:
+                data = pack_shader(prepare(payloads, cancel), cancel)
+            except Exception as exc:
+                data = ()
+                error = f"{type(exc).__name__}: {exc}"
             item = owner()
             if cancel.is_set() or item is None:
                 return
             try:
-                item.prepared.emit(generation, data)
+                if error:
+                    item.preparationFailed.emit(generation, error)
+                else:
+                    item.prepared.emit(generation, data)
             except RuntimeError:
                 pass  # The face was destroyed while its worker completed.
 
@@ -425,10 +438,25 @@ class GpuFollower(QQuickItem):
 
     def _prepared(self, generation, data):
         if generation == self._generation:
+            self._error = ""
             self._preparing_generation = None
             self._data = data
             self.readyChanged.emit()
             self.update()
+
+    def _preparation_failed(self, generation, error):
+        if generation != self._generation:
+            return
+        self._preparing_generation = None
+        self._data = ()
+        self._error = "Unable to render this layer. Change layers to retry."
+        qWarning("MoonrakerPrintFollower GPU preparation failed: " + error)
+        self.readyChanged.emit()
+        self.update()
+
+    @pyqtProperty(str, notify=readyChanged)
+    def error(self):
+        return self._error
 
     @pyqtProperty(bool, constant=True)
     def supported(self):

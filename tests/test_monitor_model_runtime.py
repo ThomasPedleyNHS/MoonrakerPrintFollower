@@ -2762,6 +2762,7 @@ Item {
             "visible: _fullRaster()",
             # Renderer ownership and the attached-only centring preference.
             "visible: root.gpuRendering",
+            'visible: root.gpuRendering && text !== ""',
             "visible: root.gpuRendering && root.available()",
             'visible: root.gpuRendering ? root.available() && !gpuFollower.ready : root._presentation.kind === "preparing" && !root._presentation.ready',
             "visible: !root.gpuRendering",

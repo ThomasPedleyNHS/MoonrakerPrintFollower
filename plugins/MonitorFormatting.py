@@ -919,7 +919,7 @@ def plate_values(exclude_object):
     """The plate map's object projection: normalised polygons in bed
     coordinates, the natural-sort order, and the truncation count. Pure
     and lane-agnostic — the model passes whichever lane carries the
-    exclude_object status, and merges the grace verdicts it owns."""
+    exclude_object status."""
     exclude_object = exclude_object if isinstance(exclude_object, Mapping) else {}
     excluded = frozenset(exclude_object.get("excluded_objects") or ())
     current = exclude_object.get("current_object")

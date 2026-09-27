@@ -3086,8 +3086,13 @@ class PlateCanvasHitTests(RealEngineTestCase):
             local = area.mapFromScene(QPointF(point))
             deadline = time.monotonic() + 1.5
             def received():
-                return any(abs(x - local.x()) < 0.75 and abs(y - local.y()) < 0.75
-                           for x, y in delivery.moves[first:])
+                # An earlier matching event is not evidence that the pointer
+                # still occupies it: native cursor warps can deliver another
+                # move in the same event-loop turn.
+                if len(delivery.moves) <= first:
+                    return False
+                x, y = delivery.moves[-1]
+                return abs(x - local.x()) < 0.75 and abs(y - local.y()) < 0.75
             while time.monotonic() < deadline:
                 self.app.processEvents()
                 if received():
@@ -3108,7 +3113,16 @@ class PlateCanvasHitTests(RealEngineTestCase):
             from PyQt6 import sip
             sip.delete(connection)
             sip.delete(context)
-        return face.property("hoveredName")
+        result = face.property("hoveredName")
+        # Keep coordinates and geometry in failures, including Linux CI where
+        # the last off-point move once appeared as the selected neighbour.
+        self._last_hover_evidence = {
+            "bed": (bed_x, bed_y), "target": (scene_x, scene_y),
+            "moves": delivery.moves, "canvas": (canvas.width(), canvas.height()),
+            "origin": (canvas.mapToScene(QPointF()).x(), canvas.mapToScene(QPointF()).y()),
+            "hovered": result,
+        }
+        return result
 
     def _click_bed(self, window, canvas, face, bed_x, bed_y):
         from PyQt6.QtTest import QTest

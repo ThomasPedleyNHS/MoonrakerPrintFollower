@@ -6,14 +6,26 @@ what the releases ahead aim to deliver and why they are ordered the way they are
 Version numbers and the release checklist live in `INSTRUCTIONS.md`. Items here
 are proposals — each becomes binding only when its release branch exists.
 
-Current release: **4.0.2** — SHIPPED (2026-09-14): the transfer and
-print-identity correctness release — five lifecycle repairs, each
-with its regression, live-tested through the snapshot loop.
+Current release branch: **4.6.0**, release-candidate validation. The shipped
+feature description is maintained in `CHANGELOG.md`, `README.md` and the
+What's New entries; `ARCHITECTURE.md` describes the implementation.
 
-Next: **4.1.0** — deep harness coverage, extended by the round-1
-critic and the architecture review (see the 4.1.0 section).
+## 4.6.0 — implemented direction and historical proposals
 
-## 4.6.0 — the next release (proposals)
+The notes below preserve the original design discussion, not the final product
+contract. These decisions supersede the corresponding proposals:
+
+- Restore is immediate through the deliberate triple-click gesture. There is no
+  configurable grace window, and restoring does not replace skipped layers.
+- The GPU scene graph renders both the follower and object picker. Following is
+  smoothed along the indexed toolpath; it is not limited to whole moves at poll cadence.
+- Colour modes match Cura Preview, including material colours and print-wide
+  gradients. Layer ghost remains translucent grey.
+- The follower supports optional retraction/priming glyphs, physical extrusion
+  width, explicit pixel width, and the persisted rendering controls documented
+  in the user guide.
+
+### Original planning record
 
 - **Codecov test analytics.** The CI already ships coverage; the test
   RESULTS now follow: the Python legs write a JUnit report

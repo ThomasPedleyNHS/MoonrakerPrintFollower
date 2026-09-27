@@ -891,6 +891,16 @@ class SocketWriteTests(SocketCase):
         instance._send_keepalive()
         self.assertEqual(sorted(instance._pending), [1])
 
+    def test_initial_reply_deadline_fails_and_resets_without_a_reply(self):
+        server = self.loopback()
+        instance = self.upgraded(server, keepalive_deadline_ms=150)
+        instance._last_auth_reply_at = 0.0
+        instance._upgraded_at -= 1.0
+        instance._send_keepalive()
+        self.assertEqual(self.failures, ["keepalive reply deadline exceeded"])
+        self.assertIsNone(instance._socket)
+        self.assertEqual(instance._upgraded_at, 0.0)
+
     def test_stop_keeps_the_close_frame_off_an_unconnected_socket(self):
         instance = self.owner()
         stub = _DeadSocket(unconnected=True)

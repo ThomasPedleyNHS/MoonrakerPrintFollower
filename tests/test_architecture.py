@@ -50,21 +50,12 @@ class ArchitectureDocumentTests(unittest.TestCase):
             self.assertIn(heading, ARCH)
 
     def test_document_names_the_runtime_components_and_services(self):
-        for module in (
-            "PrinterBinding.py", "PrinterConfig.py", "CuraIntegration.py", "CuraAdapter.py",
-            "CuraLifecycleBridge.py", "FollowController.py",
-            "PreviewPresentation.py", "PreviewFollower.py", "PreviewFormatting.py",
-            "PreviewMotion.py", "PreviewSmoothing.py",
-            "PrintCoordinator.py", "PrintState.py", "RemoteFileService.py", "DownloadStream.py",
-            "GCodeIndexService.py", "MonitorData.py", "MonitorCommands.py", "MonitorTuning.py",
-            "MonitorControls.py", "MonitorFormatting.py", "MonitorCamera.py", "BedMeshPresenter.py",
-            "BedMeshSceneNode.py", "MoonrakerMonitorModel.py", "MoonrakerFollowerMachineAction.py",
-            "MoonrakerProtocol.py", "MoonrakerSocket.py", "SocketFraming.py", "UploadController.py", "CuraOutputWriter.py",
-            "ToolheadPolicy.py", "ToolheadController.py", "MonitorTemperatureHistory.py", "ConsolePolicy.py", "ConsoleController.py",
-            "FileManagerPolicy.py", "FileManager.py",
-            "PluginPersistence.py", "PersistenceMigration.py", "MigrationNotice.py",
-        ):
-            self.assertIn(f"`{module}`", ARCH)
+        # Discover modules so a new owner cannot silently escape the table.
+        for path in sorted(PLUGINS.glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            self.assertRegex(ARCH, r"(?m)^\| `" + re.escape(path.name) + r"` \|",
+                             f"missing ownership row for {path.name}")
 
     def test_document_records_preview_reset_scopes(self):
         self.assertIn("PreviewState", ARCH)
@@ -410,6 +401,7 @@ class SourceContractTests(unittest.TestCase):
             "QVariant": "QtCore",
             "Qt": "QtCore",
             "qInstallMessageHandler": "QtCore",
+            "qWarning": "QtCore",
             "QColor": "QtGui",
             "QDesktopServices": "QtGui",
             "QFont": "QtGui",

@@ -12,6 +12,34 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @unittest.skipUnless(QT_AVAILABLE, "Install PyQt6 to test retained geometry")
 class RetainedGeometryTests(unittest.TestCase):
+    def test_worker_failure_releases_readiness_and_reaches_shared_consumers(self):
+        from PyQt6 import sip
+        from plugins import GpuFollower as module
+
+        class Layer:
+            def geometry_payload(self):
+                return {"classes": {}}
+
+        item = module.GpuFollower()
+        consumer = module.GpuFollower()
+        consumer.dataSource = item
+        try:
+            with patch.object(module, "prepare", side_effect=ValueError("invalid geometry")):
+                item.layers = {"current": Layer()}
+                item._work.futures[-1].result(timeout=5)
+                self.app.processEvents()
+            self.assertIsNone(item._preparing_generation)
+            self.assertIn("Unable to render", item.error)
+            self.assertEqual(consumer.error, item.error)
+            self.assertFalse(item.ready)
+            item._prepared(item._generation, ())
+            self.assertEqual(item.error, "")
+            item._preparation_failed(item._generation - 1, "stale")
+            self.assertEqual(item.error, "")
+        finally:
+            sip.delete(consumer)
+            sip.delete(item)
+
     def test_qml_geometry_source_binding_is_a_qobject_pointer(self):
         from PyQt6.QtCore import QUrl
         from PyQt6.QtQml import QQmlComponent, QQmlEngine, qmlRegisterType

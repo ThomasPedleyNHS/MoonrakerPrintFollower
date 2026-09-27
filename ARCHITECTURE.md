@@ -120,6 +120,29 @@ compile wait without changing pane layout or initialization ordering.
 | `WhatsNew.py` | The what's-new content: the curated per-release entries and the once-per-version marker gate | Qt, I/O or networking |
 | `WhatsNewOverlay.py` | The overlay's window owner: the boot-wait offer, the main-window/monitor lookup and the Popup's creation on Cura's own engine | Monitor state or networking |
 
+| `ArcGeometry.py` | Geometry and interpolation of one logical straight or arc motion | Qt or tracking policy |
+| `CacheNamespaces.py` | Per-machine cache rebinding and namespace lifetime | Index algorithms |
+| `CachePolicy.py` | Shared print-folder eviction, explicit recency and conservative temporary-writer liveness | Qt or file decoding |
+| `CameraTiming.py` | Opt-in cold-camera timing diagnostics | Camera lifecycle |
+| `FilesViewModel.py` | Stable-identity Qt file-list projection | Networking or file operations |
+| `FollowerColourScheme.py` | Guarded Cura colour-mode, material and theme integration | Geometry or tracking |
+| `FollowerRuntime.py` | Dependency construction and signal wiring at the composition root | Domain policy |
+| `GpuFollower.py` | Retained follower geometry, bounded asynchronous preparation and scene-graph presentation | Motion matching or printer commands |
+| `GpuObjectPicker.py` | Retained object outlines using the shared GPU stroke engine | Exclusion commands |
+| `GpuStrokeMaterial.py` | Shader materials, stroke vertex layout and GPU uniform updates | Print state or networking |
+| `LeakProbe.py` | Opt-in memory-growth diagnostics | Production lifecycle policy |
+| `MoonrakerOutputDevicePlugin.py` | Cura output-device registration and adapter construction | Upload policy |
+| `MoonrakerPrintFollower.py` | Stable Cura extension facade and runtime ownership | Domain algorithms |
+| `PlateProgress.py` | Prepared layer geometry, motion ranges and display payload construction | Qt scene graph or commands |
+| `PlateQt.py` | Qt-facing layer assets and preparation adapters | Printer tracking policy |
+| `PreparedStore.py` | Validated random-access prepared-layer files and resumable preparation | Networking or UI |
+| `PreviewColours.py` | Pure print-wide ranges and Cura-compatible gradient projection | Cura API access |
+| `PrintCoordinator.py` | Cross-domain orchestration over injected services and immutable observations | Protocol or geometry algorithms |
+| `PrintIdentity.py` | Pure current-print identity checks | I/O or mutable lifecycle |
+| `PrintStartOwner.py` | Print-start acknowledgement and operation lifetime | HTTP transport |
+| `TravelStates.py` | Per-tool retraction balance and travel classification | Rendering or networking |
+| `UiStateStore.py` | Persistent section-layout UI state through the shared store | Monitor domain state |
+
 ## 3. Binding and migration
 
 `PrinterBinding.start()` performs the legacy migrations before configuring the
@@ -1074,3 +1097,26 @@ remaining retraction is deposition, not a priming-only travel. Per-tool filament
 balances and firmware G10/G11 events cross layer boundaries and survive compact
 index hydration; prepared travel classes have a binary TRCL extension. The
 legacy combined travel channel remains available to existing consumers.
+
+### RC review hardening
+
+WebSocket data-message limits apply to the declared frame length before buffering
+a body, including final unfragmented frames and accumulated continuations. The
+initial upgraded connection has the same no-reply deadline as an established
+connection. Camera bridge requests must remain within the configured HTTP origin
+before credentials are attached. Thumbnail bodies are bounded to 16 MiB and
+upload acknowledgements to 1 MiB, including responses without Content-Length.
+
+Live motion remains physical telemetry. Paired `gcode_move.position` and
+`gcode_move.gcode_position` supply only the XYZ origin offset (including G92);
+the queued endpoint never replaces `motion_report.live_position`.
+
+Prepared-cache recency advances only after validation. Dead index temporary
+files are swept, while a folder containing an active writer or indeterminate process-liveness result
+is protected from eviction; the cache may temporarily exceed its budget while
+that writer is alive. Worker preparation failures publish a visible error and
+a diagnostic instead of silently leaving a layer pending.
+
+Native and Linux harnesses use `tests/harness/log_gate.py` to reject plugin
+warnings, errors and QML binding/polish loops. Native first-install and migration
+legs include both boots' logs. Missing evidence fails the gate.

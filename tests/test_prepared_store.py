@@ -290,7 +290,7 @@ class PreparedStoreTests(unittest.TestCase):
         # alive, so the adoption never destroys a file whose owner
         # may still hold it.
         from unittest.mock import patch
-        import plugins.PreparedStore as store_module
+        import plugins.CachePolicy as store_module
         name = "print.mpfp.tmp-12345-1234"
         with patch.object(store_module.sys, "platform", "linux"), \
                 patch.object(store_module.os, "kill", side_effect=PermissionError()):
@@ -311,7 +311,7 @@ class PreparedStoreTests(unittest.TestCase):
         # is fabricated.
         from unittest.mock import patch
         import ctypes
-        import plugins.PreparedStore as store_module
+        import plugins.CachePolicy as store_module
 
         def verdict(open_handle, open_error, exit_ok, exit_code):
             closed = []
@@ -371,7 +371,7 @@ class PreparedStoreTests(unittest.TestCase):
         # through the probe. (The probe's own kernel calls run on
         # the Windows host suite; this wiring is platform-pinned.)
         from unittest.mock import patch
-        import plugins.PreparedStore as store_module
+        import plugins.CachePolicy as store_module
         name = "print.mpfp.tmp-12345-1234"
         with patch.object(store_module.sys, "platform", "win32"), \
                 patch.object(store_module, "_windows_liveness",
@@ -389,7 +389,7 @@ class PreparedStoreTests(unittest.TestCase):
         # dead on ProcessLookupError, conservative alive on
         # PermissionError and on any indeterminate OSError.
         from unittest.mock import patch
-        import plugins.PreparedStore as store_module
+        import plugins.CachePolicy as store_module
         name = "print.mpfp.tmp-12345-1234"
         with patch.object(store_module.sys, "platform", "linux"), \
                 patch.object(store_module.os, "kill", return_value=None):
@@ -825,6 +825,18 @@ class PreparedStoreRejectionTests(unittest.TestCase):
         self.assertEqual(self.cache.load_table("print-1"),
                          {"table": [(STATE_EMPTY, 0, 0)] * 2, "complete": False})
         self.assertEqual(self.cache._file_progress(path)["count"], 2)
+
+    def test_rejected_table_does_not_become_recent_or_displace_valid_cache(self):
+        path = self.cache._path("obsolete")
+        _write_raw(path, version=_FORMAT_VERSION - 1)
+        os.utime(path, (100, 100))
+        valid = self.cache.finalise("current", [encode_layer(_payload(0))])
+        self.assertIsNone(self.cache.load_table("obsolete"))
+        self.assertEqual(os.stat(path).st_mtime, 100)
+        self.cache.max_bytes = os.path.getsize(valid)
+        self.cache._evict(None)
+        self.assertFalse(os.path.exists(path))
+        self.assertTrue(os.path.exists(valid))
 
     def test_both_readers_reject_invalid_states_and_payload_extents(self):
         path = self.cache._path("print-1")
@@ -1411,7 +1423,7 @@ class PreparedStoreStartupGuardTests(unittest.TestCase):
         # os.kill itself may refuse the pid (a narrow pid_t): an owner
         # that cannot exist is dead, not an error.
         from unittest.mock import patch
-        import plugins.PreparedStore as store_module
+        import plugins.CachePolicy as store_module
         with patch.object(store_module.sys, "platform", "linux"), \
                 patch.object(store_module.os, "kill",
                              side_effect=OverflowError()):

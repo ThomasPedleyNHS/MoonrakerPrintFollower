@@ -2,6 +2,23 @@
 from tests import qml_engine_support as harness
 
 class PlateFaceRenderTests(harness.PlateFaceRenderTests):
+    def test_loading_placeholder_transitions_do_not_create_polish_loops(self):
+        monitor, window, face = self._follower_popover()
+        start = len(harness._APPLICATION["messages"])
+        for width in (900, 650, 1100):
+            window.setWidth(width)
+            for busy, reason in ((False, ""), (True, ""),
+                                 (True, "Preparing layer…"), (False, "")):
+                self._printer.setImprovingEta(busy)
+                face.setProperty("progress", {"available": False, "reason": reason})
+                self._pump_ms(80)
+                self.assertFalse(window.grabWindow().isNull())
+            face.setProperty("progress", self.PAYLOAD)
+            self._pump_ms(80)
+        messages = harness._APPLICATION["messages"][start:]
+        self.assertEqual([], [line for line in messages
+                              if "polish" in line.lower() or "binding loop" in line.lower()])
+
     def test_colour_keys_preserve_canvas_geometry_and_paint_gradients(self):
         from PyQt6.QtCore import QPointF
         monitor, window, face = self._follower_popover()

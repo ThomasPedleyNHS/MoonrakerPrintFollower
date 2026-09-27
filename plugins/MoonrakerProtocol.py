@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlsplit
 
@@ -264,9 +265,11 @@ def live_position_in_gcode_space(
 
     ``motion_report.live_position`` is in Klipper's configured machine
     coordinate space, while the G-code file contains coordinates relative to
-    the current G-code origin. ``gcode_move.homing_origin`` is the offset
-    between those spaces. Newer Klipper releases may reorder/extend coordinate
-    vectors, so ``axis_map`` is honoured when present.
+    the current G-code origin. The paired ``position`` and ``gcode_position``
+    expose that origin, including G92 XYZ changes. They supply only the offset:
+    the returned location always comes from live telemetry, never the queued
+    endpoint. ``homing_origin`` is a compatibility fallback when the pair is
+    absent. ``axis_map`` is honoured for extended coordinate vectors.
     """
     if not isinstance(motion_report, dict):
         return None
@@ -274,6 +277,9 @@ def live_position_in_gcode_space(
     if not isinstance(raw, (list, tuple)):
         return None
     move = gcode_move if isinstance(gcode_move, dict) else {}
+    queued = move.get("position")
+    gcode = move.get("gcode_position")
+    paired = isinstance(queued, (list, tuple)) and isinstance(gcode, (list, tuple))
     origin = move.get("homing_origin")
     if not isinstance(origin, (list, tuple)):
         origin = ()
@@ -294,6 +300,17 @@ def live_position_in_gcode_space(
             value = float(raw[index])
         except (TypeError, ValueError):
             return None
+        if not math.isfinite(value):
+            return None
+        if paired:
+            try:
+                offset = float(queued[index]) - float(gcode[index])
+            except (IndexError, TypeError, ValueError):
+                return None
+            if not math.isfinite(offset):
+                return None
+            result.append(value - offset)
+            continue
         # homing_origin historically uses XYZ order. If a future Klipper build
         # exposes a coordinate vector matching axis_map, use the mapped index;
         # otherwise fall back to conventional XYZ order.

@@ -2419,6 +2419,14 @@ Item {
         anchors.fill: parent
         color: UM.Theme.getColor("main_background")
         visible: root.gpuRendering ? root.available() && !gpuFollower.ready : root._presentation.kind === "preparing" && !root._presentation.ready
+        UM.Label {
+            anchors.centerIn: parent
+            width: parent.width * 0.8
+            text: gpuFollower.error
+            visible: root.gpuRendering && text !== ""
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+        }
     }
 
     // Exact preparation remains a live scene-graph participant. A warm
@@ -3119,7 +3127,7 @@ Item {
     // action — glyph, bar, percentage and stage — so the follower
     // never reads as a dead end. The mini suppresses the action (its
     // section hosts the placeholder).
-    ColumnLayout {
+    Column {
         anchors.centerIn: parent
         width: parent.width * 0.8
         visible: !root.available() && !root.compact
@@ -3129,14 +3137,14 @@ Item {
         // offer (the live request: the glyph and the button implied
         // an action the index already satisfies).
         UM.Label {
-            Layout.fillWidth: true
+            width: parent.width
             visible: root.progress != null && root.progress.reason !== ""
             text: root.progress != null ? root.progress.reason : ""
             color: UM.Theme.getColor("text_inactive")
             horizontalAlignment: Text.AlignHCenter
         }
         PlateDownloadAction {
-            Layout.fillWidth: true
+            width: parent.width
             visible: root.progress == null || root.progress.reason === ""
             printerModel: root.printerModel
             idleInstruction: "Download and index this print to follow its progress."

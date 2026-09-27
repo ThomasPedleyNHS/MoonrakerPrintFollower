@@ -35,6 +35,8 @@ import time
 # copies it next to the runner) and is the ONE place a host platform is
 # chosen.
 import native_host
+from pathlib import Path
+from log_gate import check_logs
 from window_geometry import verified_geometry
 
 DISPLAY = os.environ.get("HARNESS_DISPLAY", ":99")
@@ -4800,4 +4802,5 @@ if __name__ == "__main__":
     # a failed leg are the ones whose verdicts get read afterwards, and
     # an `or` here would leave exactly those legs without the record.
     _static_rc = static_leg_report(RUN_DIR)
-    sys.exit(_rc or _static_rc)
+    _log_rc = check_logs(sorted(Path(RUN_DIR).glob("cura.log*"))) if os.environ.get("HARNESS_CURA_CONFIG") else 0
+    sys.exit(_rc or _static_rc or _log_rc)

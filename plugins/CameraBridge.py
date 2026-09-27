@@ -199,8 +199,13 @@ class CameraBridge(QObject):
         if not self._upstream_base:
             socket.abort()
             return
+        base = QUrl(self._upstream_base)
         target = QUrl(self._upstream_base + path)
-        if not target.isValid() or target.scheme() not in ("http", "https"):
+        if (not path.startswith("/") or path.startswith("//")
+                or any(ord(char) < 32 for char in path)
+                or not target.isValid() or target.scheme() not in ("http", "https")
+                or target.scheme() != base.scheme() or target.host() != base.host()
+                or target.port() != base.port() or target.userInfo() or target.hasFragment()):
             socket.abort()
             return
         request = QNetworkRequest(target)

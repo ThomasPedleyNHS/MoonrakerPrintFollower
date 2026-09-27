@@ -303,8 +303,8 @@ class PrintCoordinator(QObject):
             # actually has — the live report's split=None with a valid
             # anchor must separate an absent virtual_sdcard from an
             # absent physical position.
-            if position is None:
-                Logger.log("w", "plate position: virtualSdcard=%r "
+            if position is None and config.trace_layer:
+                Logger.log("d", "plate position: virtualSdcard=%r "
                                "statusKeys=%s",
                            list(sdcard.keys()) if isinstance(sdcard, Mapping) else None,
                            sorted(status.keys()))

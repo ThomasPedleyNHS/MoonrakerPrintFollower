@@ -260,16 +260,22 @@ class UploadLifecycleTests(unittest.TestCase):
         from PyQt6.QtNetwork import QNetworkReply
 
         class FakeReply(QObject):
+            readyRead = pyqtSignal()
             uploadProgress = pyqtSignal(int, int)
             finished = pyqtSignal()
             def __init__(self):
                 super().__init__()
                 self._deleted = 0
                 self._aborts = 0
+                self._body = json.dumps(body).encode() if body is not None else b""
             def error(self):
                 return QNetworkReply.NetworkError.ContentNotFoundError if error else QNetworkReply.NetworkError.NoError
             def errorString(self): return "simulated"
-            def readAll(self): return json.dumps(body).encode() if body is not None else b""
+            def setReadBufferSize(self, size): self._buffer_size = size
+            def read(self, size):
+                data, self._body = self._body[:size], self._body[size:]
+                return data
+            def readAll(self): return self.read(len(self._body))
             def abort(self):
                 # The faithful Qt 6.6 encoding: abort() emits finished
                 # SYNCHRONOUSLY.

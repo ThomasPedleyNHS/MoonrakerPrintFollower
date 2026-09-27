@@ -3041,7 +3041,7 @@ Component {
                     // (the live report).
                     Layout.fillWidth: true
                     wrapMode: Text.NoWrap
-                    text: plateFace.clickProgress >= 2 ? "Click again to " + plateFace.pendingAction + " (" + plateFace.clickProgress + " of 3)" : (plateFace.hoveredName !== "" ? plateFace.hoverDetail() : "Triple-click to exclude, or restore an excluded object")
+                    text: plateFace.clickProgress >= 2 ? "Click again to " + plateFace.pendingAction + " (" + plateFace.clickProgress + " of 3)" : (plateFace.hoveredName !== "" ? plateFace.hoverDetail() : (root.printer != null && root.printer.plateObjects.truncated > 0 ? root.printer.plateObjects.truncated + " objects omitted from this map (256-object limit)" : "Triple-click to exclude, or restore an excluded object"))
                     elide: Text.ElideRight
                     color: plateFace.hoveredName !== "" ? plateFace.hoverInk() : UM.Theme.getColor("text_inactive")
                     horizontalAlignment: Text.AlignHCenter
@@ -3135,7 +3135,7 @@ Component {
 
                 UM.Label {
                     Layout.fillWidth: true
-                    text: "A triple-click sends the command immediately — there is no confirmation dialog. A restore is allowed only inside the grace window."
+                    text: "A triple-click sends the command immediately — there is no confirmation dialog. Restoring an object does not replace skipped layers."
                     color: UM.Theme.getColor("text_inactive")
                     font: UM.Theme.getFont("default_italic")
                     wrapMode: Text.WordWrap
