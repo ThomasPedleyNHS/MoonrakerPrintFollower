@@ -522,7 +522,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # paints the new current layer as a pending base while it
         # still reads the previous attached state and then clears it
         # .
-        ("followerViewChanged", ("followerShowPrevious", "followerShowNext", "followerShowBase", "followerShowTravels", "followerAntialiasing", "followerKeepCentred", "followerSoftwareRendering", "followerLineScale",
+        ("followerViewChanged", ("followerShowPrevious", "followerShowNext", "followerShowBase", "followerShowTravels", "followerAntialiasing", "followerKeepCentred", "followerSoftwareRendering", "followerMotionSmoothing", "followerLineScale",
                                  "followerTravelVisualRatio", "followerAttached", "followerLayerAnchor")),
         # The popover's pause block: the schedule's rows and the
         # candidate-derived gates. Its own group — a pause landing
@@ -534,9 +534,9 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                                  "pauseAtLayerHasClearable")),
         ("plateScrubVectorChanged", ("plateScrubVector",)),
         ("plateLiveScrubVectorChanged", ("plateLiveScrubVector",)),
-        ("plateProgressChanged", ("plateLayers", "plateSplit", "plateProgressAnchor", "plateProgressAvailable", "plateProgressReason",
+        ("plateProgressChanged", ("plateLayers", "plateSplit", "platePartial", "plateProgressAnchor", "plateProgressAvailable", "plateProgressReason",
                                   "plateLayerCount", "plateLayerMotionCount",
-                                  "plateLiveLayers", "plateLiveSplit", "plateLiveAnchor", "plateLiveAvailable",
+                                  "plateLiveLayers", "plateLiveSplit", "plateLivePartial", "plateLiveAnchor", "plateLiveAvailable",
                                   "plateNavigationData", "plateNavigationSplit",
                                   "plateNavigationBacking", "plateSceneEpoch")),
         ("powerDevicesChanged", ("powerDevices",)),
@@ -1452,6 +1452,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             values["plateScrubVector"] = (None if self._plate_surfaces["popover"].gpu_rendering
                                           else self._scrub_vector_for(popover))
             values["plateSplit"] = popover["split"] if popover is not None else None
+            values["platePartial"] = popover.get("partial", 0.0) if popover is not None else 0.0
             # The progress slider's range: the layer's own motion count (0
             # while the payload has not landed — the slider reads dead).
             try:
@@ -1526,6 +1527,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             values["plateLiveScrubVector"] = (None if self._plate_surfaces["mini"].gpu_rendering
                                               else self._scrub_vector_for(progress))
             values["plateLiveSplit"] = progress["split"] if progress is not None else None
+            values["plateLivePartial"] = progress.get("partial", 0.0) if progress is not None else 0.0
             values["plateLiveAnchor"] = (progress["anchor"]
                                           if progress is not None and progress["anchor"] is not None else -1)
             values["plateLiveAvailable"] = bool(progress is not None and progress.get("layers", {}).get("current") is not None)
@@ -1711,6 +1713,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             followerShowTravels=self._follower_show_travels,
             followerAntialiasing=self._follower_antialiasing,
             followerKeepCentred=self._follower_keep_centred,
+            followerMotionSmoothing=bool(getattr(self._config(), "path_smoothing", True)),
             followerSoftwareRendering=bool(getattr(self._config(), "software_follower_renderer", False)),
             followerLineScale=self._follower_line_scale,
             followerTravelVisualRatio=_PLATE_TRAVEL_VISUAL_RATIO,
@@ -1881,6 +1884,8 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     plateLayerMotionCount = value_property(int, "plateLayerMotionCount", plateProgressChanged, 0)
     plateLiveLayers = value_property(QVariant, "plateLiveLayers", plateProgressChanged, {})
     plateLiveSplit = value_property(QVariant, "plateLiveSplit", plateProgressChanged, None)
+    platePartial = value_property(float, "platePartial", plateProgressChanged, 0.0)
+    plateLivePartial = value_property(float, "plateLivePartial", plateProgressChanged, 0.0)
     plateLiveAnchor = value_property(int, "plateLiveAnchor", plateProgressChanged, -1)
     plateLiveAvailable = value_property(bool, "plateLiveAvailable", plateProgressChanged, False)
     followerShowPrevious = value_property(bool, "followerShowPrevious", followerViewChanged, True)
@@ -1889,6 +1894,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     followerShowTravels = value_property(bool, "followerShowTravels", followerViewChanged, False)
     followerAntialiasing = value_property(bool, "followerAntialiasing", followerViewChanged, False)
     followerKeepCentred = value_property(bool, "followerKeepCentred", followerViewChanged, False)
+    followerMotionSmoothing = value_property(bool, "followerMotionSmoothing", followerViewChanged, True)
     followerSoftwareRendering = value_property(bool, "followerSoftwareRendering", followerViewChanged, False)
     followerLineScale = value_property(float, "followerLineScale", followerViewChanged, 1.0)
     followerTravelVisualRatio = value_property(float, "followerTravelVisualRatio", followerViewChanged,

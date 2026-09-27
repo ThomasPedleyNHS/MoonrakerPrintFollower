@@ -355,6 +355,7 @@ PREFIX_RULES = [
     ("key", "plateDot", "b11"),
     ("key", "plateLayers", "b11"),
     ("key", "plateSplit", "b11"),
+    ("key", "platePartial", "b11"),
     ("key", "plateSceneEpoch", "b11"),
     ("key", "plateProgressAnchor", "b11"),
     ("key", "plateProgressAvailable", "b11"),
@@ -363,11 +364,13 @@ PREFIX_RULES = [
     ("key", "plateLayerMotionCount", "b11"),
     ("key", "plateLiveLayers", "b11"),
     ("key", "plateLiveSplit", "b11"),
+    ("key", "plateLivePartial", "b11"),
     ("key", "plateLiveAnchor", "b11"),
     ("key", "plateLiveAvailable", "b11"),
     # The layer slider's range and the follower's follow state (4.6.0).
     ("key", "plateLayerCount", "b11"),
     ("key", "followerAttached", "b11"),
+    ("key", "followerMotionSmoothing", "b11"),
     ("key", "followerLayerAnchor", "b11"),
     ("key", "zOffset", "g4"),
     ("key", "homedAxes", "b8"),
@@ -418,6 +421,11 @@ PREFIX_RULES = [
 # fields are validated by test_coverage.py. An entry whose re-check
 # trigger fires must be re-probed, not carried forward silently.
 EXCLUSIONS = {
+    "GpuFollower.pointAtMotion": {
+        "reason": "internal retained-geometry lookup for the animated marker, not a user command",
+        "evidence": "tests/test_gpu_follower.py: test_marker_tracks_every_curve_subedge_and_matches_shader_fraction",
+        "date": "2026-09-27", "recheck": "marker geometry lookup or fractional stroke encoding changes",
+    },
     "monitorPopoverPointerBarrier": {
         "reason": "internal input shield; real Qt mouse and wheel delivery is covered by the engine suite",
         "evidence": "tests/test_qml_camera_controls.py: test_a_popover_blocks_camera_gestures_but_the_uncovered_webcam_still_works",

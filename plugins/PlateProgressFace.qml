@@ -31,6 +31,68 @@ Item {
     // live layer, not the frozen one) and the payload arrives with no
     // split, so the layer draws as its whole base.
     property bool attached: true
+    property bool motionSmoothing: false
+    property real _motionFrom: 0.0
+    property real _motionTo: 0.0
+    property real _motionBlend: 1.0
+    property var _motionLayer: null
+    property int _motionAnchor: -1
+    property real _motionAt: 0.0
+    property bool _motionCorrected: false
+    property real displayDotX: 0.0
+    property real displayDotY: 0.0
+    readonly property real displayedMotion: _motionFrom + (_motionTo - _motionFrom) * _motionBlend
+
+    // Animate only presentation uniforms. Geometry uploads remain at telemetry
+    // cadence; the shader clips the unfinished edge to the observed position.
+    NumberAnimation {
+        id: motionAnimator
+        target: root
+        property: "_motionBlend"
+        from: 0.0
+        to: 1.0
+        duration: 250
+        easing.type: Easing.Linear
+    }
+
+    function _updateMotion(force) {
+        var p = root.progress;
+        var layer = p != null && p.layers != null ? p.layers.current : null;
+        var anchor = p != null ? p.anchor : -1;
+        var target = p != null && p.split != null ? Number(p.split) + (root.motionSmoothing ? Number(p.partial || 0) : 0) : 0;
+        if (!force && layer === root._motionLayer && anchor === root._motionAnchor && target === root._motionTo)
+            return;
+        var now = Date.now();
+        var canSmooth = !force && root.gpuRendering && root.motionSmoothing && root.attached && root.visible && layer != null && layer === root._motionLayer && anchor === root._motionAnchor && target > root._motionTo && !(root.printerModel != null && root.printerModel.canResumePrint === true);
+        var previous = root.displayedMotion;
+        root._motionCorrected = layer !== root._motionLayer || anchor !== root._motionAnchor || target < root._motionTo;
+        motionAnimator.stop();
+        root._motionFrom = canSmooth ? previous : target;
+        root._motionTo = target;
+        root._motionLayer = layer;
+        root._motionAnchor = anchor;
+        root._motionBlend = canSmooth ? 0.0 : 1.0;
+        if (canSmooth) {
+            motionAnimator.duration = Math.min(1000, Math.max(50, now - root._motionAt));
+            motionAnimator.start();
+        }
+        root._motionAt = now;
+    }
+    function _updateDot(force) {
+        var valid = root.dot != null && root.dot.valid === true;
+        var point = valid && root.motionSmoothing && root.gpuRendering && root.attached && root.visible ? gpuFollower.pointAtMotion(root.displayedMotion) : null;
+        root.displayDotX = point != null && point.valid ? point.x : (valid ? root.dot.x : 0);
+        root.displayDotY = point != null && point.valid ? point.y : (valid ? root.dot.y : 0);
+    }
+    onDisplayedMotionChanged: _updateDot(false)
+    onMotionSmoothingChanged: {
+        _updateMotion(true);
+        _updateDot(true);
+    }
+    onVisibleChanged: {
+        _updateMotion(true);
+        _updateDot(true);
+    }
     property bool keepCentred: false
     property bool showPrevious: true
     property bool showNext: true
@@ -112,8 +174,8 @@ Item {
     // ONE camera), the target otherwise. The two coincide at every
     // interaction boundary, so the flip never jumps.
     readonly property real _dotScale: root._interactionActive ? root.displayScale : root.viewScale
-    readonly property real _dotPanX: root._interactionActive ? root.displayPanX : root.viewPanX
-    readonly property real _dotPanY: root._interactionActive ? root.displayPanY : root.viewPanY
+    readonly property real _dotPanX: root._interactionActive || root.keepCentred ? root.displayPanX : root.viewPanX
+    readonly property real _dotPanY: root._interactionActive || root.keepCentred ? root.displayPanY : root.viewPanY
     // The camera interaction state: while a gesture is live (or the
     // exact scene is still reassembling toward the final target),
     // the warm navigation raster owns the heavy-scene presentation.
@@ -1059,8 +1121,8 @@ Item {
         };
     }
 
-    function _panOnToolhead() {
-        var scene = mapping.plateToScene(root.dot.x, root.dot.y);
+    function _panOnToolhead(x, y) {
+        var scene = mapping.plateToScene(x === undefined ? root.displayDotX : x, y === undefined ? root.displayDotY : y);
         if (scene == null) {
             return null;
         }
@@ -1098,15 +1160,25 @@ Item {
     function _followToolhead() {
         if (!root.keepCentred || root.viewScale <= 1.0 || !dotAvailable())
             return;
-        var pan = _panOnToolhead();
-        if (pan != null && (pan.x !== root.viewPanX || pan.y !== root.viewPanY)) {
-            root.viewPanX = pan.x;
-            root.viewPanY = pan.y;
-            root.displayPanX = pan.x;
-            root.displayPanY = pan.y;
+        // Publish the target at telemetry cadence; animation ticks move only
+        // the displayed transform, without waking software render demands.
+        var target = _panOnToolhead(root.dot.x, root.dot.y);
+        var display = _panOnToolhead();
+        if (target != null) {
+            root.viewPanX = target.x;
+            root.viewPanY = target.y;
+        }
+        if (display != null) {
+            root.displayPanX = display.x;
+            root.displayPanY = display.y;
         }
     }
-    onDotChanged: _followToolhead()
+    onDotChanged: {
+        _updateDot(false);
+        _followToolhead();
+    }
+    onDisplayDotXChanged: _followToolhead()
+    onDisplayDotYChanged: _followToolhead()
     onKeepCentredChanged: _followToolhead()
 
     // The ONE physical stroke-width calculation, shared by the ghost,
@@ -1427,6 +1499,7 @@ Item {
     }
 
     onProgressChanged: {
+        _updateMotion(false);
         _adoptProgressWorld();
         if (root.progress == null || root.progress.layers == null) {
             _requestProgressPaint();
@@ -1565,7 +1638,11 @@ Item {
         root.settleTimer.restart();
     }
     // Detaching hides the dot (the one-shot jump reads it on demand).
-    onAttachedChanged: _followToolhead()
+    onAttachedChanged: {
+        _updateMotion(true);
+        _updateDot(true);
+        _followToolhead();
+    }
     onCompactChanged: {
         // The product sets compact at construction and never flips
         // it; the repaint keeps the thumbnail honest wherever it is.
@@ -1632,6 +1709,7 @@ Item {
 
     GpuFollowerItem {
         id: gpuFollower
+        onReadyChanged: root._updateDot(false)
         anchors.fill: parent
         z: 0.5
         smoothToolpaths: root.smoothToolpaths
@@ -1639,7 +1717,8 @@ Item {
         layers: root.gpuRendering && root.progress != null && root.progress.layers != null ? root.progress.layers : ({})
         settings: ({
                 plot: mapping._plot,
-                split: root.progress != null ? root.progress.split : null,
+                split: root.progress != null && root.progress.split != null ? Number(root.progress.split) + (root.motionSmoothing && root.attached ? Number(root.progress.partial || 0) : 0) : null,
+                displaySplit: root.motionSmoothing && root.attached ? root.displayedMotion : (root.progress != null ? root.progress.split : null),
                 scale: root._dotScale,
                 panX: root._dotPanX,
                 panY: root._dotPanY,
@@ -2504,8 +2583,8 @@ Item {
         // stale geometry until the next pan (the live report — the
         // jump landed off the centre). The whole-var read is tracked
         // and the binding re-runs on every re-fit.
-        x: root.dot != null && mapping._plot != null ? root._dotPanX + (mapping._plot.bed.offsetX + (root.dot.x - mapping._plot.bed.bedXMin) * mapping._plot.sx) * root._dotScale - width / 2 : 0
-        y: root.dot != null && mapping._plot != null ? root._dotPanY + (mapping._plot.bed.offsetY + (mapping._plot.bed.bedYMax - root.dot.y) * mapping._plot.sy) * root._dotScale - height / 2 : 0
+        x: root.dot != null && mapping._plot != null ? root._dotPanX + (mapping._plot.bed.offsetX + (root.displayDotX - mapping._plot.bed.bedXMin) * mapping._plot.sx) * root._dotScale - width / 2 : 0
+        y: root.dot != null && mapping._plot != null ? root._dotPanY + (mapping._plot.bed.offsetY + (mapping._plot.bed.bedYMax - root.displayDotY) * mapping._plot.sy) * root._dotScale - height / 2 : 0
     }
 
     // The zoom/pan gestures (the live request): the wheel zooms about

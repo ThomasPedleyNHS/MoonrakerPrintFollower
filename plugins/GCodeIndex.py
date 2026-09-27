@@ -615,6 +615,36 @@ class LayerMotionIndex:
             split = max(split, int(minimum_split))
         return max(0, min(n, split)), method
 
+    def partial_motion(self, layer, split, live_position):
+        """Project onto only the accepted unfinished motion; never search ahead."""
+        if live_position is None or split is None or split < 0 or layer < 0:
+            return 0.0
+        if layer >= len(self.motion_x) or split >= len(self.motion_x[layer]):
+            return 0.0
+        xs, ys, zs = self.motion_x[layer], self.motion_y[layer], self.motion_z[layer]
+        if len(ys) != len(xs) or len(zs) != len(xs):
+            return 0.0
+        start = self.layer_start_positions[layer] if split == 0 and layer < len(self.layer_start_positions) \
+            else (xs[split - 1], ys[split - 1], zs[split - 1]) if split > 0 else (xs[0], ys[0], zs[0])
+        end = (xs[split], ys[split], zs[split])
+        try:
+            point = tuple(float(value) for value in live_position[:3])
+            if len(point) != 3 or not all(math.isfinite(value) for value in point):
+                return 0.0
+            arcs = self.motion_arcs[layer] if layer < len(self.motion_arcs) else {}
+            if split in arcs:
+                hit = ArcGeometry.closest(arcs[split], start, end, point)
+                return hit[1] if hit is not None and hit[0] <= 3.0 else 0.0
+            delta = tuple(b - a for a, b in zip(start, end, strict=True))
+            length = sum(value * value for value in delta)
+            if length <= 1e-12:
+                return 0.0
+            t = max(0.0, min(1.0, sum((p - a) * d for p, a, d in zip(point, start, delta, strict=True)) / length))
+            distance = sum((p - a - t * d) ** 2 for p, a, d in zip(point, start, delta, strict=True))
+            return t if distance <= 9.0 else 0.0
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
     def layer_entry_confirmed(self, layer, candidate, live_position, previous_z=None):
         """Whether physical Z distinguishes this match from the previous layer.
 

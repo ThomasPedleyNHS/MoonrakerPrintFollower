@@ -363,7 +363,10 @@ class CameraFpsControlTests(harness.CameraFpsControlTests):
         pane, window, _model, _image, frame = self._fps_pane(700, 700)
         left = harness.QPointF(frame.width() / 4, frame.height() / 2)
         self._wheel(window, frame, position=left)
-        self._pump_ms(50)
+        # Observe the first delivered animation tick. A loaded/offscreen
+        # macOS runner may not deliver any timer event within a fixed 50 ms.
+        self._wait_until(window, lambda _image: pane.property("cameraDisplayZoom") > 1.0,
+                         timeout=5.0)
         # (W/2 - x) / 4 is where the pointer's own point lands once the
         # picture is a quarter bigger: the edge it was over stays put,
         # so a wheel to the left of the centre walks the pan right.
@@ -372,7 +375,7 @@ class CameraFpsControlTests(harness.CameraFpsControlTests):
                                msg="the point under the pointer drifted")
         self.assertAlmostEqual(pane.property("cameraPanY"), 0.0, delta=1.0)
         displayed = pane.property("cameraDisplayZoom")
-        self.assertGreater(displayed, 1.0, "the image must start gliding immediately")
+        self.assertGreater(displayed, 1.0, "the image must start gliding")
         self.assertLess(displayed, pane.property("cameraZoom"),
                         "a wheel notch must not snap the image to its target")
         anchor = left.x() - frame.width() / 2

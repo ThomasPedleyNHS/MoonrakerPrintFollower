@@ -946,3 +946,36 @@ not predict Cura's Python 3.12 cold-index or distant-layer click latency.
 Translucent independently capped strokes can overlap at joins and produce darker
 dots. The renderer retains inexpensive direct blending; it does not add an
 offscreen opacity pass to conceal that cosmetic artifact.
+
+
+Attached GPU motion smoothing uses the existing `path_smoothing` setting.
+The shared accepted motion record includes projection onto its single unfinished
+motion; this never searches ahead or changes the accepted completed-motion floor.
+A linear presentation animation trails observed progress, with immediate resets
+for layer changes, backward corrections, detach and pause. The shader clips the
+unfinished stroke using that animated motion fraction. Arc subdivisions carry
+length-weighted fractional ranges within their motion, so they reveal sequentially.
+The toolhead marker reads those same retained ranges by binary search and follows
+the indexed path rather than interpolating XY telemetry chords across corners.
+Missing geometry falls back to the reported toolhead position. This is a delayed
+presentation of observed progress, not extrapolation of future printer movement.
+Keep-centred animation changes only the displayed transform each frame; the model
+receives its target view at telemetry cadence. Software rendering keeps its
+existing discrete motion presentation.
+
+
+A Windows Cura 5.13 live Preview-load capture (2026-09-27, 50 Hz,
+50 seconds, py-spy GIL-owner sampling, 2,292 samples, zero sampling errors)
+recorded 45.84 seconds of sampled GIL time: 44.00 seconds / 95.99% included
+Cura's `GCodeReader`, versus 0.16 seconds / 0.35% including Print Follower.
+The reader's dominant paths were `FlavorParser._createPolygon` and
+`_calculateLineWidth`. Parsing on a JobQueue worker therefore still contends
+with Python UI callbacks for the shared interpreter lock. Verbose diagnostics
+were enabled; this capture does not support blaming them for the load stall.
+A separate post-parse capture found substantial main-thread time under Cura's
+SimulationPass / RenderBatch, including index-buffer conversion and upload.
+Inclusive timings overlap and must not be added. These captures identify Cura's
+reader and first 3D render as the dominant observed costs, not a measured
+Windows-versus-macOS explanation. The plugin defers its native layer-height
+cache requests and queued height batches until loading / slicing finishes;
+Preview motion writes already suspend during loading.

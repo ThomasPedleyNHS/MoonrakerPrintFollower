@@ -3264,6 +3264,7 @@ Component {
                                 "reason": root.printer.plateProgressReason,
                                 "layers": root.printer.plateLayers,
                                 "split": root.printer.plateSplit,
+                                "partial": root.printer.platePartial,
                                 "anchor": root.printer.plateProgressAnchor,
                                 "method": "motion index",
                                 "navigationData": root.printer.plateNavigationData,
@@ -3282,6 +3283,7 @@ Component {
                         // detached (the live request).
                         showBase: root.printer != null ? root.printer.followerShowBase : true
                         showTravels: root.printer != null ? root.printer.followerShowTravels : false
+                        motionSmoothing: root.printer != null ? root.printer.followerMotionSmoothing : false
                         smoothToolpaths: root.printer != null ? root.printer.followerAntialiasing : false
                         softwareRendering: root.printer != null ? root.printer.followerSoftwareRendering : false
                         pixelLineWidth: true

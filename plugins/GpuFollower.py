@@ -7,10 +7,11 @@ import weakref
 import bisect
 import ctypes
 import math
+import struct
 import threading
 import time
 
-from PyQt6.QtCore import pyqtProperty, pyqtSignal
+from PyQt6.QtCore import pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QMatrix4x4, QGuiApplication
 from PyQt6.QtQuick import (
@@ -226,6 +227,43 @@ class GpuFollower(QQuickItem):
         self._render_generation = -1
         self.prepared.connect(self._prepared)
 
+    @pyqtSlot(float, result="QVariantMap")
+    def pointAtMotion(self, progress):
+        """Read the same retained edge / arc subdivision the shader clips.
+
+        Binary searches over immutable worker-built buffers avoid walking or
+        converting layer geometry on animation frames. Missing geometry must
+        use the reported position, never a chord across unobserved moves.
+        """
+        if not math.isfinite(progress) or progress < 0:
+            return {"valid": False}
+        motion = math.floor(progress)
+        endpoint = None
+        for role, _name, motions, packed in self._data:
+            if role != "current":
+                continue
+            lo, hi = bisect.bisect_left(motions, motion), bisect.bisect_right(motions, motion)
+            if lo < hi:
+                # Arc subedges share a motion ID, with cumulative path fractions.
+                while lo + 1 < hi:
+                    middle = (lo + hi) // 2
+                    start = struct.unpack_from("<f", packed, middle * 192 + 24)[0]
+                    if start <= progress:
+                        lo = middle
+                    else:
+                        hi = middle
+                offset = lo * 192
+                x, y, dx, dy = struct.unpack_from("<4f", packed, offset)
+                start, span = struct.unpack_from("<2f", packed, offset + 24)
+                amount = min(1.0, max(0.0, (progress - start) / max(span, 1e-12)))
+                return {"valid": True, "x": x + dx * amount, "y": y + dy * amount}
+            if progress == motion:
+                previous = bisect.bisect_right(motions, motion - 1) - 1
+                if previous >= 0 and motions[previous] == motion - 1:
+                    x, y, dx, dy = struct.unpack_from("<4f", packed, previous * 192)
+                    endpoint = {"valid": True, "x": x + dx, "y": y + dy}
+        return endpoint or {"valid": False}
+
     @pyqtProperty("QVariantMap", notify=layersChanged)
     def layers(self):
         return self._layers
@@ -395,6 +433,8 @@ class GpuFollower(QQuickItem):
         node.setMatrix(matrix)
         split = settings.get("split")
         split = float("inf") if split is None else split
+        display_split = settings.get("displaySplit", split)
+        display_split = split if display_split is None else display_split
         for role, name, motions, data, base, printed in node._groups:
             enabled = role == "current" or bool(settings.get("showPrevious" if role == "prev" else "showNext"))
             if name == "TRAVEL":
@@ -409,10 +449,15 @@ class GpuFollower(QQuickItem):
                 if geometry.vertexCount() != count:
                     geometry.allocate(count)
                     if count:
-                        ctypes.memmove(int(geometry.vertexData()), data, count * 24)
+                        ctypes.memmove(int(geometry.vertexData()), data, count * 32)
                     geometry.markVertexDataDirty()
                     child.markDirty(QSGNode.DirtyStateBit.DirtyGeometry | QSGNode.DirtyStateBit.DirtyMaterial)
                 material = child._material
+                clip = child is printed and role == "current" and math.isfinite(display_split)
+                if material.clip != clip or clip and material.split != display_split:
+                    material.clip = clip
+                    material.split = display_split if clip else 0.0
+                    child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)
                 material.viewport = (self.window().width(), self.window().height())
                 width = settings.get("lineWidth", 1) * (settings.get("travelRatio", 0.7) if name == "TRAVEL" else 1)
                 aa = bool(settings.get("antialiasing"))

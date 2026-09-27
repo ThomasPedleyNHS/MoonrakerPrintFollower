@@ -2,6 +2,29 @@
 from tests import qt_integration_support as harness
 
 class CuraIntegrationLoadTests(harness.CuraIntegrationLoadTests):
+    def test_heights_do_not_touch_cura_during_load_or_slicing_and_resume_afterwards(self):
+        from unittest.mock import Mock
+        view = Mock()
+        view.getMaxLayers.return_value = 2
+        view._getLayerHeight.side_effect = lambda layer: layer * .2
+        self.cura._view = view
+        self.cura._load_lease = object()
+        self.assertEqual(self.cura.heights, ())
+        view._calculateLayerHeightsCache.assert_not_called()
+        self.cura._load_lease = None
+        self.cura._slicing = True
+        self.assertEqual(self.cura.heights, ())
+        view._getLayerHeight.assert_not_called()
+        batch = []
+        self.cura._heights = batch
+        self.cura._heights_built = 0
+        self.cura._build_heights_step(batch)
+        self.assertIsNone(self.cura._heights, "queued height work must retire when loading starts")
+        self.cura._slicing = False
+        self.assertEqual(self.cura.heights, (0, .2, .4))
+        view._calculateLayerHeightsCache.assert_called_once()
+        self.cura._view = None
+
     def test_load_refused_without_a_view(self):
         path = self._make_file()
         messages = []

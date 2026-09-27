@@ -863,8 +863,9 @@ class GCodeIndexService(QObject):
         with index.cache_lock:
             total = index.motion_count(anchor)
             split = self._observe_split(anchor, file_position, live_position, paused, extruding)
+            partial = 0.0 if self._split_tracker.awaiting_layer_entry else index.partial_motion(anchor, split, live_position)
         return MotionProgress(anchor, split, total,
-                              "motion index" if split is not None else "unavailable")
+                              "motion index" if split is not None else "unavailable", partial)
 
     def _observe_split(self, anchor, file_position, live_position, paused, extruding):
         if file_position is None:
@@ -1314,6 +1315,7 @@ class GCodeIndexService(QObject):
             elif not 0 <= anchor < len(self._view.ranges):
                 refusal = "outside"
         return {"layers": layers, "split": split, "method": method,
+                "partial": motion.partial if motion is not ... and motion is not None else 0.0,
                 "motionTotal": motion_total, "anchor": anchor, "refusal": refusal}
 
     # The memory accounting (the RAM tiers' honest view): the

@@ -12,6 +12,55 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @unittest.skipUnless(QT_AVAILABLE, "Install PyQt6 to test retained geometry")
 class RetainedGeometryTests(unittest.TestCase):
+    def test_motion_animation_changes_uniforms_without_reuploading_geometry(self):
+        from PyQt6 import sip
+        from PyQt6.QtQuick import QQuickWindow
+        from plugins.GpuFollower import GpuFollower
+        from plugins.GpuStrokeMaterial import pack_shader
+        window = QQuickWindow()
+        item = GpuFollower(window.contentItem())
+        item._data = pack_shader((("current", "SKIN", (0, 1),
+                                  array("f", (0, 0, 10, 0, 10, 0, 20, 0)).tobytes()),))
+        item.settings = {"split": 1.8, "displaySplit": 1.2}
+        node = item.updatePaintNode(None, None)
+        printed = node._groups[0][-1]
+        pointer = int(printed.geometry().vertexData())
+        item.settings = {"split": 1.8, "displaySplit": 1.6}
+        self.assertIs(item.updatePaintNode(node, None), node)
+        self.assertEqual(int(printed.geometry().vertexData()), pointer)
+        self.assertEqual(printed.geometry().vertexCount(), 12)
+        self.assertEqual(printed._material.split, 1.6)
+        self.assertTrue(printed._material.clip)
+        sip.delete(node)
+        sip.delete(window)
+
+    def test_arc_subedges_partition_one_motion_instead_of_growing_together(self):
+        from plugins.GpuStrokeMaterial import pack_shader, _pack_stdlib
+        raw = (("current", "SKIN", (0, 0), array("f", (0, 0, 3, 0, 3, 0, 3, 1)).tobytes()),)
+        self.assertEqual(pack_shader(raw), _pack_stdlib(raw))
+        vertices = array("f")
+        vertices.frombytes(pack_shader(raw)[0][3])
+        self.assertEqual((vertices[6], vertices[7]), (0, .75))
+        self.assertEqual((vertices[6 * 8 + 6], vertices[6 * 8 + 7]), (.75, .25))
+
+    def test_marker_tracks_every_curve_subedge_and_matches_shader_fraction(self):
+        from plugins.GpuFollower import GpuFollower
+        from plugins.GpuStrokeMaterial import pack_shader
+        item = GpuFollower()
+        item._data = pack_shader((("current", "SKIN", (0, 0, 1),
+                                  array("f", (0, 0, 3, 0, 3, 0, 3, 1, 3, 1, 5, 1)).tobytes()),
+                                 ("next", "SKIN", (0,), array("f", (50, 50, 60, 60)).tobytes())))
+        for progress, expected in ((0, (0, 0)), (.375, (1.5, 0)), (.75, (3, 0)),
+                                   (.875, (3, .5)), (1, (3, 1)), (1.5, (4, 1)), (2, (5, 1))):
+            point = item.pointAtMotion(progress)
+            self.assertTrue(point["valid"])
+            self.assertAlmostEqual(point["x"], expected[0])
+            self.assertAlmostEqual(point["y"], expected[1])
+        for progress in (-1, 2.5, 20, float("nan"), float("inf")):
+            self.assertFalse(item.pointAtMotion(progress)["valid"])
+        item._data = ()
+        self.assertFalse(item.pointAtMotion(.5)["valid"], "retired geometry must not locate the live marker")
+
     @classmethod
     def setUpClass(cls):
         from PyQt6.QtGui import QGuiApplication

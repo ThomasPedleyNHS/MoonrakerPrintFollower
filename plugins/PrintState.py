@@ -24,12 +24,13 @@ class MotionProgress:
     split: Optional[int]
     motion_total: int
     method: str = "motion index"
+    partial: float = 0.0
 
     @property
     def fraction(self) -> Optional[float]:
         if self.split is None or self.motion_total <= 0:
             return None
-        return max(0.0, min(1.0, self.split / self.motion_total))
+        return max(0.0, min(1.0, (self.split + self.partial) / self.motion_total))
 
 
 @dataclass(frozen=True)

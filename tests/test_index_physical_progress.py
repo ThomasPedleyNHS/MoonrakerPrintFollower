@@ -2,6 +2,19 @@
 from tests import index_plate_support as harness
 
 class PlateSplitRefinementTests(harness.PlateSplitRefinementTests):
+    def test_partial_motion_projects_only_onto_the_accepted_unfinished_move(self):
+        from plugins.GCodeIndex import LayerMotionIndex
+        from array import array
+        index = LayerMotionIndex(ranges=[(0, 100)], motion_x=[array("f", [10, 20])],
+            motion_y=[array("f", [0, 0])], motion_z=[array("f", [.2, .2])],
+            layer_start_positions=[(0, 0, .2)])
+        self.assertAlmostEqual(index.partial_motion(0, 0, (4, 0, .2)), .4)
+        self.assertAlmostEqual(index.partial_motion(0, 1, (16, 0, .2)), .6)
+        self.assertEqual(index.partial_motion(0, 0, (16, 0, .2)), 0,
+                         "projection must not search forward to a different motion")
+        self.assertEqual(index.partial_motion(0, 0, (4, 0, 5)), 0)
+        self.assertEqual(index.partial_motion(0, 2, (20, 0, .2)), 0)
+        self.assertEqual(index.partial_motion(-1, 0, (4, 0, .2)), 0)
     def test_live_motion_is_independent_of_geometry_and_shared_without_rematching(self):
         from unittest.mock import patch
 
@@ -344,7 +357,7 @@ class PlateSplitRefinementTests(harness.PlateSplitRefinementTests):
         payload = self.service.plate_progress(0, 50, (5.0, 0.0, 0.2))
         self.assertIsNone(payload["split"])
         self.assertEqual(payload, {"layers": {}, "split": None, "method": "unavailable",
-                                   "motionTotal": 0, "anchor": 0, "refusal": ""})
+                               "partial": 0.0, "motionTotal": 0, "anchor": 0, "refusal": ""})
 
 
 class RepeatedGeometrySplitTests(harness.RepeatedGeometrySplitTests):

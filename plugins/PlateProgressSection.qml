@@ -69,6 +69,7 @@ ColumnLayout {
                         "layers": root.printerModel.plateLiveLayers,
                         "scrubVector": progressMini.scrubVector,
                         "split": root.printerModel.plateLiveSplit,
+                        "partial": root.printerModel.plateLivePartial,
                         "anchor": root.printerModel.plateLiveAnchor,
                         "method": "motion index"
                     }) : null
@@ -80,6 +81,7 @@ ColumnLayout {
                 showNext: root.printerModel != null ? root.printerModel.followerShowNext : true
                 showBase: root.printerModel != null ? root.printerModel.followerShowBase : true
                 showTravels: root.printerModel != null ? root.printerModel.followerShowTravels : false
+                motionSmoothing: root.printerModel != null ? root.printerModel.followerMotionSmoothing : false
                 smoothToolpaths: root.printerModel != null ? root.printerModel.followerAntialiasing : false
                 renderSurface: "mini"
                 softwareRendering: root.printerModel != null ? root.printerModel.followerSoftwareRendering : false
