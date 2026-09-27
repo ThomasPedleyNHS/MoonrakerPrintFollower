@@ -3047,8 +3047,8 @@ Component {
                     horizontalAlignment: Text.AlignHCenter
                 }
 
-                Flow {
-                    Layout.fillWidth: true
+                Row {
+                    Layout.alignment: Qt.AlignHCenter
                     spacing: UM.Theme.getSize("narrow_margin").width
                     Row {
                         spacing: 4 * screenScaleFactor
