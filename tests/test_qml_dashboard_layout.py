@@ -359,7 +359,7 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
         window.show()
         header = section.childItems()[0]
         start = len(harness._APPLICATION["messages"])
-        for width in (383, 240, 359):
+        for width in (383, 240, 359, 399):
             section.setWidth(width)
             for model in models:
                 for expanded in (True, False, True):
@@ -375,6 +375,20 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
                             self.assertAlmostEqual(section.height(), body.y() + body.height()
                                                    + section.property("verticalMargin"), delta=.5)
                             self.assertLessEqual(body.x() + body.width(), width)
+                            if section_id == "job" and model.get("improvingEta"):
+                                phase = model["improveEtaPhase"]
+                                progress = model["improveEtaProgress"]
+                                if progress >= 0:
+                                    phase += " %d%%" % round(progress * 100)
+                                labels = [item for item in section.findChildren(harness.QObject)
+                                          if item.property("text") == phase]
+                                self.assertTrue(labels, "the busy phase must be displayed")
+                                for label in labels:
+                                    from PyQt6.QtQml import QQmlExpression
+                                    expression = QQmlExpression(harness.QQmlEngine.contextForObject(label),
+                                                                label, "Number(wrapMode)")
+                                    self.assertEqual(expression.evaluate()[0], 0,
+                                                     "progress must elide, never wrap into another row")
         self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
                           if "polish loop" in line.lower() or "binding loop" in line.lower()])
 
@@ -398,8 +412,13 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
                     monitorSpeed="100%", monitorState="Printing", monitorVelocity="—", nextPauseBaked=False,
                     nextPauseEta="", nextPauseFraction=-1, platePassFraction=-1, printActive=True,
                     printIndexReady=False)
-        self.check_section("JobSection.qml", "job", [base, dict(base, improvingEta=True,
-                           improveEtaProgress=.5), dict(base, printIndexReady=True, monitorLayer="2 / 100",
+        downloading = [dict(base, improvingEta=True, improveEtaPhase=phase,
+                            improveEtaProgress=progress)
+                       for phase, progress in (("Resolving", -1), ("Downloading", 0),
+                                               ("Downloading", .09), ("Downloading", .99),
+                                               ("Downloading", 1), ("Indexing", -1))]
+        self.check_section("JobSection.qml", "job", [base, *downloading,
+                           dict(base, printIndexReady=True, monitorLayer="2 / 100",
                            monitorLayerProgress=.3, monitorEta="00:10:00", monitorPositionX="10.0",
                            monitorPositionY="20.0", monitorPositionZ=".4")])
 

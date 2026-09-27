@@ -517,6 +517,9 @@ Item {
                     text: root.printerModel != null && root.printerModel.improvingEta ? (root.printerModel.improveEtaPhase + (root.printerModel.improveEtaProgress >= 0 ? " " + (root.printerModel.improveEtaProgress * 100).toFixed(0) + "%" : "")) : ""
                     color: UM.Theme.getColor("text_inactive")
                     Layout.maximumWidth: 140 * screenScaleFactor
+                    // UM.Label defaults to wrapping. Progress changes must
+                    // not feed a width-dependent height back into the grid.
+                    wrapMode: Text.NoWrap
                     elide: Text.ElideRight
                 }
             }
