@@ -149,6 +149,7 @@ class _UpgradeResponder:
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen(1)
         self.port = self._listener.getsockname()[1]
+        self.accepted = threading.Event()
         threading.Thread(target=self._serve, daemon=True).start()
 
     def _serve(self) -> None:
@@ -156,7 +157,9 @@ class _UpgradeResponder:
             conn, _ = self._listener.accept()
         except OSError:
             return
+        self.accepted.set()
         try:
+            conn.settimeout(10.0)
             if self._tls is not None:
                 conn = self._tls.wrap_socket(conn, server_side=True)
             conn.settimeout(2.0)
@@ -394,7 +397,7 @@ class SocketCase(unittest.TestCase):
                 return True
             self.app.processEvents()
             time.sleep(0.005)
-        return False
+        return bool(predicate())
 
     def loopback(self, address=("127.0.0.1", 0)):
         server = WSServer(address)
@@ -782,7 +785,19 @@ class SocketFailureTests(SocketCase):
         instance = self.owner()
         instance.start("wss://127.0.0.1:%d/websocket" % responder.port, "key", set(), set())
         self.assertIsInstance(instance._socket, QSslSocket)
-        self.assertTrue(self.wait_until(lambda: self.failures), "a self-signed peer was not refused")
+        errors = []
+        instance._socket.sslErrors.connect(lambda problems: errors.extend(problem.error() for problem in problems))
+        self.assertTrue(self.wait_until(responder.accepted.is_set), "the TLS peer never accepted TCP")
+        # Native TLS backends can initialise their system trust store on the
+        # first handshake. Allow that separately from connecting, and require
+        # a certificate-validation failure, not any generic socket failure.
+        self.assertTrue(self.wait_until(lambda: self.failures, timeout=15.0),
+                        "a self-signed peer was not refused: %r, TLS errors=%r" % (self.failures, errors))
+        self.assertTrue(set(errors) & {
+            QSslError.SslError.SelfSignedCertificate,
+            QSslError.SslError.SelfSignedCertificateInChain,
+            QSslError.SslError.CertificateUntrusted,
+        }, "the peer failed without rejecting its untrusted certificate: %r" % errors)
         self.assertFalse(instance.is_upgraded)
 
     def test_ssl_errors_are_surfaced_rather_than_ignored(self):
