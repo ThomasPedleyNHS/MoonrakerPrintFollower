@@ -1872,13 +1872,21 @@ SCENARIOS = [
     {"id": "g5", "group": "motion", "name": "macros render and refuse while printing",
      "steps": [
          {"op": "sim_set", "state": {"print_stats": {"state": "printing", "filename": "scenario1.gcode"}}},
+         {"op": "wait_model", "prop": "monitorState", "contains": "print", "budget": 15},
+         {"op": "wait_model", "prop": "monitorFilename", "value": "scenario1.gcode", "budget": 15},
          {"op": "assert_model", "prop": "macroNames", "value": []},
      ]},
     {"id": "g6", "group": "motion", "name": "pause and resume ride the peer's print routes",
      "steps": [
+         # Establish this unit's session memory explicitly. macroNames
+         # can already be empty before g5's printing update is observed;
+         # it is not proof that the model ever saw that print's filename.
+         {"op": "sim_set", "state": {"print_stats": {"state": "printing", "filename": "scenario1.gcode"}}},
+         {"op": "wait_model", "prop": "monitorState", "contains": "print", "budget": 15},
+         {"op": "wait_model", "prop": "monitorFilename", "value": "scenario1.gcode", "budget": 15},
          {"op": "sim_set", "state": {"print_stats": {"state": "standby", "filename": ""}}},
+         {"op": "wait_model", "prop": "monitorState", "contains": "standby", "budget": 15},
          {"op": "wait_model", "prop": "monitorFilename", "value": "", "budget": 15},
-         # g5 just observed scenario1.gcode printing in this same session.
          # Clearing print_stats must retain that session-only restart target.
          {"op": "assert_model", "prop": "canRestartLastPrint", "value": True},
          {"op": "sim_set", "state": {"print_stats": {"state": "printing", "filename": "scenario1.gcode"}}},

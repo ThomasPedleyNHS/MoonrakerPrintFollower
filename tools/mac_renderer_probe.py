@@ -108,6 +108,59 @@ result = True
 ''', timeout=30, raise_on_error=True)
                 except Exception as exc:
                     report["external_gl_restored"] = {"error": repr(exc)}
+        # A second native QQuickWindow shares Cura's bundled Qt/backend
+        # but has no Cura 3D callback or plugin content. Controlled colour
+        # changes distinguish a general Qt presentation failure from the
+        # main window's composition. This runs only after the real unit.
+        created = False
+        try:
+            report["bare_qt_window"] = runner.exec_rpc('''
+from UM.Application import Application
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
+from PyQt6.QtQuick import QQuickWindow
+app = Application.getInstance()
+control = QQuickWindow()
+control.setFlags(Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+control.setTitle("Qt presentation control")
+control.setPosition(40, 60)
+control.resize(400, 300)
+control.setColor(QColor("#ff0000"))
+app._mpf_diagnostic_window = control
+control.show()
+control.raise_()
+control.update()
+result = {"rect": [control.x(), control.y(), control.width(), control.height()]}
+''', timeout=30, raise_on_error=True)
+            created = True
+            time.sleep(2)
+            report["bare_qt_red"] = still("-bare-qt-red")
+            report["bare_qt_blue_update"] = runner.exec_rpc('''
+from UM.Application import Application
+from PyQt6.QtGui import QColor
+control = Application.getInstance()._mpf_diagnostic_window
+control.setColor(QColor("#0000ff"))
+control.update()
+result = {"colour": control.color().name(), "exposed": control.isExposed(),
+          "graphics_api": control.rendererInterface().graphicsApi().value}
+''', timeout=30, raise_on_error=True)
+            time.sleep(2)
+            report["bare_qt_blue"] = still("-bare-qt-blue")
+        except Exception as exc:
+            report["bare_qt_error"] = repr(exc)
+        finally:
+            if created:
+                try:
+                    report["bare_qt_closed"] = runner.exec_rpc('''
+from UM.Application import Application
+app = Application.getInstance()
+app._mpf_diagnostic_window.hide()
+app._mpf_diagnostic_window.deleteLater()
+app._mpf_diagnostic_window = None
+result = True
+''', timeout=30, raise_on_error=True)
+                except Exception as exc:
+                    report["bare_qt_closed"] = {"error": repr(exc)}
     pid = report.get("hello", {}).get("pid")
     if not pid:
         found = subprocess.run(["/usr/bin/pgrep", "-f", "Contents/MacOS/UltiMaker-Cura"],
