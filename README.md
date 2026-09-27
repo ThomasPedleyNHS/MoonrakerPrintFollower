@@ -26,7 +26,7 @@ the indexed toolpath.
   on the bed. Triple-click to exclude or restore one object; the status line
   counts clicks and reports the outcome. Hover to read its name and state.
 - **Smooth live following** — Preview and Monitor share accepted motion
-  progress. With Smooth travels enabled, the GPU follower reveals each move
+  progress. With Smooth path progress enabled, the GPU follower reveals each move
   progressively and moves the toolhead along the indexed path, including
   curves. Keep centred follows the toolhead; panning switches it off.
 - **Cura Preview colours** — Material colour, Line type, Speed, Layer
@@ -614,8 +614,7 @@ uses 1.75 mm filament; invalid width estimates use 0.4 mm.
 **Anti-aliasing**, **Retractions** and **Priming** are saved checkbox choices.
 The latter two show hollow up/down arrows only after the events occur, and
 thin dense markers when zoomed out. Exclude Object is always antialiased and
-has no additional rendering controls. With the Settings pane's **Smooth
-travels** enabled, the GPU follower animates line progress and toolhead position
+has no additional rendering controls. With **Smooth path progress** enabled in Settings → Following, the GPU follower animates line progress and toolhead position
 along the indexed path between observations. The software fallback keeps its
 discrete presentation. Preview and Monitor use the same accepted live motion
 progress.

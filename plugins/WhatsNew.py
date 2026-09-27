@@ -33,7 +33,7 @@ WHATS_NEW: Tuple[dict, ...] = (
             "The Print Follower and object picker now render on the GPU. "
             "Pan, smooth zoom, layer scrubbing and width changes stay light; "
             "the last complete frame stays visible while a layer loads.",
-            "With Smooth travels enabled, lines draw progressively and the "
+            "With Smooth path progress enabled, lines draw progressively and the "
             "toolhead follows the indexed path, including curves. Preview "
             "and Monitor share live motion tracking. Keep centred follows "
             "the toolhead until you pan.",

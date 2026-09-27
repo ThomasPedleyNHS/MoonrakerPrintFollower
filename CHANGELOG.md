@@ -17,7 +17,7 @@ the indexed toolpath.
   on the bed. Triple-click to exclude or restore one object; the status line
   counts clicks and reports the outcome. Hover to read its name and state.
 - **Smooth live following** — Preview and Monitor share accepted motion
-  progress. With Smooth travels enabled, the GPU follower reveals each move
+  progress. With Smooth path progress enabled, the GPU follower reveals each move
   progressively and moves the toolhead along the indexed path, including
   curves. Keep centred follows the toolhead; panning switches it off.
 - **Cura Preview colours** — Material colour, Line type, Speed, Layer
