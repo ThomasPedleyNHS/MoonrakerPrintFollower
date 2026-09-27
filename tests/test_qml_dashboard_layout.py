@@ -347,3 +347,58 @@ class FileManagerOpenBindingTests(harness.RealEngineTestCase):
         self.assertEqual(model.fetches, 2)
         self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
                           if "binding loop" in line.lower()])
+
+
+class SectionContentSizingTests(harness.RealEngineTestCase):
+    def check_section(self, filename, section_id, models):
+        section = self.mount(filename)
+        window = harness.QQuickWindow()
+        window.resize(500, 900)
+        section.setParentItem(window.contentItem())
+        self.addCleanup(window.deleteLater)
+        window.show()
+        header = section.childItems()[0]
+        start = len(harness._APPLICATION["messages"])
+        for width in (383, 240, 359):
+            section.setWidth(width)
+            for model in models:
+                for expanded in (True, False, True):
+                    section.setProperty("printerModel", dict(model, sectionExpandedMap={section_id: expanded}))
+                    self._pump_ms(35)
+                    self.assertAlmostEqual(header.width(), width, delta=.5)
+                    if not expanded:
+                        self.assertAlmostEqual(section.height(), header.height(), delta=.5)
+                    else:
+                        body = section.childItems()[1]
+                        if body.isVisible():
+                            self.assertGreater(section.height(), header.height())
+                            self.assertAlmostEqual(section.height(), body.y() + body.height()
+                                                   + section.property("verticalMargin"), delta=.5)
+                            self.assertLessEqual(body.x() + body.width(), width)
+        self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
+                          if "polish loop" in line.lower() or "binding loop" in line.lower()])
+
+    def test_profiles_arrive_change_and_disappear_without_height_feedback(self):
+        base = dict(controlsLocked=False, monitorConnected=True, canApplyTemperaturePreset=True,
+                    sectionReason="", sectionReasonDetail="", printActive=False)
+        models = [dict(base, temperaturePresetItems=rows) for rows in
+                  ([], [{"active": False, "name": "PLA", "index": 0}],
+                   [{"active": True, "name": "A longer named profile", "index": 0},
+                    {"active": False, "name": "ABS", "index": 1}], [])]
+        self.check_section("ProfilesSection.qml", "profiles", models)
+
+    def test_job_telemetry_and_download_rows_keep_the_section_height_content_driven(self):
+        base = dict(actionStatus="", actionTimestamp="", filamentRemaining="—", filamentUsed="—",
+                    improveEtaPhase="", improveEtaProgress=0, improvingEta=False,
+                    monitorAccelLimit="—", monitorConnected=True, monitorElapsed="00:00:01",
+                    monitorEta="—", monitorEtaBasis="", monitorFilename="test.gcode", monitorFinish="—",
+                    monitorFlow="100%", monitorFlowDiameter="1.75 mm", monitorFlowRate="—",
+                    monitorLayer="—", monitorLayerProgress=-1, monitorLayerSource="", monitorMessage="",
+                    monitorPositionX="—", monitorPositionY="—", monitorPositionZ="—", monitorProgress=0,
+                    monitorSpeed="100%", monitorState="Printing", monitorVelocity="—", nextPauseBaked=False,
+                    nextPauseEta="", nextPauseFraction=-1, platePassFraction=-1, printActive=True,
+                    printIndexReady=False)
+        self.check_section("JobSection.qml", "job", [base, dict(base, improvingEta=True,
+                           improveEtaProgress=.5), dict(base, printIndexReady=True, monitorLayer="2 / 100",
+                           monitorLayerProgress=.3, monitorEta="00:10:00", monitorPositionX="10.0",
+                           monitorPositionY="20.0", monitorPositionZ=".4")])

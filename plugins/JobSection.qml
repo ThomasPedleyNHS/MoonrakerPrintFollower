@@ -8,9 +8,15 @@ import "theme"
 // The Print-job section (4.3.0 extraction): the status, progress,
 // layer, ETA and Improve-ETA rows out of the monitor as one
 // property-driven component.
-ColumnLayout {
+Item {
     id: root
-    spacing: 0
+    // Width flows down from the pane; content height flows back up only
+    // through this implicit size. A layout around the inner layout made
+    // late telemetry/preset rows recursively polish both layout solvers.
+    readonly property real sideMargin: UM.Theme.getSize("narrow_margin").width + UM.Theme.getSize("section_icon").width / 2
+    readonly property real verticalMargin: UM.Theme.getSize("default_margin").height
+    implicitWidth: sectionBody.implicitWidth + 2 * sideMargin
+    implicitHeight: sectionHeader.height + (sectionBody.visible ? sectionBody.implicitHeight + 2 * verticalMargin : 0)
     property var printerModel: null
     // The tuple rule (the live ruling): if ANY axis value is
     // unavailable, the Position row's cells empty themselves — a
@@ -19,19 +25,19 @@ ColumnLayout {
     readonly property bool positionRowAvailable: root.printerModel != null && root.printerModel.monitorPositionX !== "—" && root.printerModel.monitorPositionX !== "" && root.printerModel.monitorPositionY !== "—" && root.printerModel.monitorPositionY !== "" && root.printerModel.monitorPositionZ !== "—" && root.printerModel.monitorPositionZ !== ""
 
     CollapsibleSectionHeader {
-        Layout.fillWidth: true
+        id: sectionHeader
+        width: parent.width
         printerModel: root.printerModel
         title: "Print job"
         sectionId: "job"
         sectionIcon: "Printer"
     }
     ColumnLayout {
+        id: sectionBody
+        x: root.sideMargin
+        y: sectionHeader.height + root.verticalMargin
+        width: Math.max(0, root.width - 2 * root.sideMargin)
         visible: root.printerModel == null || root.printerModel.sectionExpandedMap["job"] !== false
-        Layout.topMargin: UM.Theme.getSize("default_margin").height
-        Layout.bottomMargin: UM.Theme.getSize("default_margin").height
-        Layout.leftMargin: UM.Theme.getSize("narrow_margin").width + UM.Theme.getSize("section_icon").width / 2
-        Layout.rightMargin: UM.Theme.getSize("narrow_margin").width + UM.Theme.getSize("section_icon").width / 2
-        Layout.fillWidth: true
         spacing: UM.Theme.getSize("default_margin").height
 
         Row {

@@ -2605,6 +2605,10 @@ SCENARIOS = [
      "steps": [
          {"op": "sim_arm", "arms": {"gcode_fixture": "penguin"}},
          {"op": "sim_set_current_print", "filename": "penguin.gcode"},
+         # Setting simulator state is not delivery: wait for the actual
+         # snapshot before the card changes height/state under the press.
+         {"op": "wait_model", "prop": "monitorFilename", "value": "penguin.gcode", "budget": 30},
+         {"op": "wait_model", "prop": "monitorState", "value": "Printing", "budget": 30},
          {"op": "click_stage", "stage": "PreviewStage"},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCardOverlay", "budget": 30},
          {"op": "click_text", "text": "Load current print"},

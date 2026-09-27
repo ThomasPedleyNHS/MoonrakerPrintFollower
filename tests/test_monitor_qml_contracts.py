@@ -128,14 +128,10 @@ class MonitorModelContractTests(harness.MonitorModelContractTests):
         self.assertEqual(literals, harness.SECTION_IDS - {"console"})
         self.assertEqual(len(harness.SECTION_IDS), 22)
         self.assertIn('sectionExpandedMap["console"]', harness.MONITOR_QML)
-        # The extraction's header contract (the re-reviews' zero-width
-        # catch, probe-verified): every section component's root is a
-        # ColumnLayout (a plain Column counts invisible children in
-        # its implicit height — a collapsed section kept its hidden
-        # content in the pane's scroll length), and the header rides
-        # Layout.fillWidth — a width: parent.width binding inside the
-        # layout root breaks and renders 0 px, losing the click
-        # target entirely.
+        # Header width must be owned by its container. Layout-rooted
+        # sections use Layout.fillWidth; the two dynamic sections use an
+        # explicit Item shell to avoid nested layout feedback. Their live
+        # collapse/width/content transitions run in the real-engine suite.
         for section_qml in (harness.PRINT_SECTION_QML, harness.SETUP_SECTION_QML, harness.TOOLHEAD_SECTION_QML,
                             harness.MACROS_SECTION_QML, harness.PROFILES_SECTION_QML, harness.TUNING_SECTION_QML,
                             harness.FANS_SECTION_QML, harness.LEDS_SECTION_QML, harness.PWM_SECTION_QML,
@@ -144,11 +140,16 @@ class MonitorModelContractTests(harness.MonitorModelContractTests):
                             harness.TEMP_HISTORY_SECTION_QML, harness.FANS_INFO_SECTION_QML,
                             harness.FILAMENT_SECTION_QML, harness.TEMPS_SECTION_QML,
                             harness.SYSTEM_INFO_SECTION_QML, harness.MCUS_SECTION_QML, harness.JOB_SECTION_QML):
-            self.assertIn("ColumnLayout {\n    id: root\n    spacing: 0", section_qml)
             header = section_qml[section_qml.index("CollapsibleSectionHeader {"):
                                  section_qml.index("CollapsibleSectionHeader {") + 400]
-            self.assertIn("Layout.fillWidth: true", header)
-            self.assertNotIn("width: parent.width", header)
+            if section_qml in (harness.PROFILES_SECTION_QML, harness.JOB_SECTION_QML):
+                self.assertIn("Item {\n    id: root", section_qml)
+                self.assertIn("width: parent.width", header)
+                self.assertIn("sectionBody.visible ? sectionBody.implicitHeight", section_qml)
+            else:
+                self.assertIn("ColumnLayout {\n    id: root\n    spacing: 0", section_qml)
+                self.assertIn("Layout.fillWidth: true", header)
+                self.assertNotIn("width: parent.width", header)
         # The system/mcu sections sit in the STATUS PANE, not inside
         # the chart pop-over's legend repeater (the adversarial
         # critic's misplaced-insertion catch). Objects moved to the
