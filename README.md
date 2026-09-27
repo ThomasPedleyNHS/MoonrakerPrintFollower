@@ -13,55 +13,50 @@ Moonraker Print Follower is a unified Cura integration for Klipper/Moonraker. It
 
 ## What changed in 4.6.0
 
-Version 4.6.0 is the plate release: the Monitor now draws your build
-plate — every object where the slicer defined it — so a failure
-mid-print points at a place on the plate instead of a name in a list.
-The print follower lands beside it, drawing the print's own layers on
-the same plate, and the prepared geometry gains a per-print home on
-disk.
+Version 4.6.0 adds an interactive build plate and Print Follower to
+Monitor, with GPU rendering for both the follower and Exclude Object picker.
+The follower shares Cura Preview's colour modes and tracks live motion along
+the indexed toolpath.
 
-- **The plate map** — the object polygons Moonraker reports for the
-  printer's `exclude_object` status, drawn to scale in the
-  Information pane: included objects in the text colour, the object
-  printing right now in the accent, excluded objects red, and the
-  objects the print has already visited green. Its slot is always
-  reserved, so the plate arriving mid-print never reflows the pane,
-  and a click opens the picker full size.
-- **Triple-click excludes, and restores** — the gesture is the
-  confirmation, so the old per-name action and its dialog are gone.
-  The permanent line under the map counts the clicks and names the
-  direction while a command is in flight, and the outcome — a refusal
-  included — lands in the status line. A restore sends Klipper's
-  name-scoped `EXCLUDE_OBJECT RESET=1 NAME=…`, never the bare
-  plate-wide reset.
-- **The print follower** — a second section on the same plate draws
-  the previous and next layers ghosted, the current layer's printed
-  portion filling in as the print runs, and the toolhead where it is.
-  Every motion type has its own colour in a key under the map, and
-  travels stay hidden until switched on.
-- **The follower is a tool** — zoom and pan the plate, seek any layer
-  on the Layer slider (the seek itself detaches the follow), scrub the
-  current layer by hand, set the line thickness, jump the view onto
-  the toolhead and keep it centred, and detach or attach whenever you
-  like.
-- **Schedule a pause from the follower** — slide the pop-over's Layer
-  slider to a layer and one button schedules the pause at the end of
-  it. The list beside the plate carries each pause with its own ETA,
-  cancels the ones you scheduled, and marks the ones the gcode
-  already carries as baked and read-only.
-- **The prepared geometry gets its own home** — each printer's
-  prepared layers and G-code index share one folder per print under
-  that machine's cache namespace, so a print reopened from the picker
-  skips the whole preparation walk; eviction drops whole prints,
-  least-recently-used first, and the Diagnostics tab carries the
-  per-printer size limit (512 MiB by default).
-- **The temperature chart's own clock** — the chart samples on a
-  fixed one-second cadence instead of following the auxiliary delivery
-  slider, whose fast settings used to cut the advertised 30-minute
-  window down to minutes. The Temps readouts still follow the slider.
-- **Fixes** — rapid X and Y jog taps can no longer overshoot their
-  maxima, and the settings sliders grab from either side of the handle
-  and keep the keyboard while a save applies.
+- **GPU plate views** — retained geometry keeps pan, smooth zoom, scrubbing
+  and width changes responsive. The themed grid moves with the toolpath,
+  and the last complete frame stays visible while a new layer loads.
+  Diagnostics offers a software-renderer fallback for both plate views.
+- **The object picker** — see included, current, excluded and visited objects
+  on the bed. Triple-click to exclude or restore one object; the status line
+  counts clicks and reports the outcome. Hover to read its name and state.
+- **Smooth live following** — Preview and Monitor share accepted motion
+  progress. With Smooth travels enabled, the GPU follower reveals each move
+  progressively and moves the toolhead along the indexed path, including
+  curves. Keep centred follows the toolhead; panning switches it off.
+- **Cura Preview colours** — Material colour, Line type, Speed, Layer
+  thickness, Flow rate and Line thickness use Cura's selected palette and
+  print-wide gradient ranges. Material colour supports multiple tools.
+  Travels distinguish non-retracted, retracting, retracted and priming moves.
+- **Readable layers and widths** — choose 1–8 px strokes or True thickness,
+  which estimates each extrusion's width from the G-code. Previous layers
+  are coloured and solid; next layers are coloured and dashed; Layer ghost
+  stays grey. Anti-aliasing is an optional saved setting. Retractions and
+  Priming show small hollow arrows only after those events occur.
+- **Layer inspection and pauses** — seeking a layer detaches live following;
+  scrub its progress, attach again, or schedule a pause at its end. The pause
+  list shows ETAs and read-only pauses already baked into the G-code.
+- **Faster indexing and preparation** — workers yield regularly, publish
+  bounded progress updates and prepare demanded layers off the UI thread.
+  GPU geometry and decoded layers have bounded memory caches and nearby
+  layers are prefetched. Per-printer disk caches reuse prepared prints,
+  checkpoint interrupted preparation and evict whole prints least recently
+  used first; the default limit is 512 MiB per printer.
+- **Webcam and printer controls** — webcam zoom is smooth. Restart last print
+  remembers a file for this Cura session only and is disabled while a print
+  is active. Resume allows 120 seconds for the command to finish. Speed and
+  extrusion multipliers accept 1–50,000%, with bounds enforced on input.
+- **Monitor polish** — print progress has two decimal places, Last action
+  includes a timestamp, and index-download offers disappear once indexing
+  succeeds, including during PRINT_START. Hidden download controls no longer
+  accept clicks or show tooltips. Button text, legends and empty states are
+  aligned consistently. The temperature chart retains its own one-second
+  sampling clock.
 
 ## What changed in 4.5.0
 - The webcam comes up in milliseconds on the Monitor page — the startup's two races (a refresh restarting its own websocket, and the first discovery applying the stream twice) are fixed.
@@ -588,9 +583,42 @@ A click on the pane's map opens the picker. **Triple-click an object to exclude 
 
 ### Print Follower
 
-The Information pane's second plate section draws what the printer is actually doing: the previous and next layers ghosted, the current layer with its printed portion filling in at the poll cadence, and the live toolhead. Every motion type the index knows has its own colour in a key under the map, and travel moves stay hidden until switched on.
+The Information pane's second plate section shows the current layer's printed
+portion and live toolhead. Click it to open the follower pop-over. Both this
+view and the Exclude Object picker use GPU rendering by default; Configuration
+→ Diagnostics has a software-renderer fallback for both.
 
-The plate is a tool rather than a picture. The plate zooms and pans; the Layer slider seeks any layer, and the seek itself detaches the follow; the layer-progress slider plays the frozen layer through by hand; the line thickness scales from 0.5× to 2×; **Jump to toolhead** and **Keep toolhead centred** hold the live position at the current zoom. Detach and Attach are explicit, and the view re-rasters once the interaction settles instead of on every tick.
+Zoom and pan the plate, or seek any layer with the Layer slider, which detaches
+live following. The layer-progress slider plays that layer through by hand;
+Detach and Attach are explicit. **Jump to toolhead** moves the view to the
+live position. **Keep centred** follows it while attached; panning turns this
+off, while zooming keeps it enabled. The themed grid uses 10 mm minor lines
+and 50 mm major lines. The previous frame remains visible during layer loads.
+
+The colour dropdown shares Cura Preview's Material colour, Line type, Speed,
+Layer thickness, Flow rate and Line thickness modes and palette. Gradient
+bounds cover the whole indexed print; material colours follow each tool.
+Travels are hidden by default and distinguish non-retracted, retracting,
+retracted and priming moves. Previous-layer strokes are coloured and solid;
+next-layer strokes use 0.5 mm dashes and 0.5 mm gaps. **Layer ghost** remains
+translucent grey in every mode.
+
+Set extrusion strokes to **1–8 px**, independent of zoom, or enable **True
+thickness** to estimate width per motion from filament volume, path length and
+layer height. Its readout says **True**; using the pixel-width controls disables
+it and resumes the previously saved pixel setting. Travels remain 1 px and
+grid widths are independent. This estimates a rectangular bead cross-section;
+it does not infer volumetric E or live flow overrides. Missing diameter metadata
+uses 1.75 mm filament; invalid width estimates use 0.4 mm.
+
+**Anti-aliasing**, **Retractions** and **Priming** are saved checkbox choices.
+The latter two show hollow up/down arrows only after the events occur, and
+thin dense markers when zoomed out. Exclude Object is always antialiased and
+has no additional rendering controls. With the Settings pane's **Smooth
+travels** enabled, the GPU follower animates line progress and toolhead position
+along the indexed path between observations. The software fallback keeps its
+discrete presentation. Preview and Monitor use the same accepted live motion
+progress.
 
 The follower can also pause the print. Click the pane's plate to open the pop-over, slide its Layer slider to a layer, and the button at the foot of the schedule offers the end of that layer: one press schedules the pause, and the same button then removes it. The list beside the plate carries the whole schedule — each pause with its own ETA (`in 31m · ≈14:32`), a row's ✕ cancelling that one and **Clear** cancelling the rest — with a pause the printer has already taken dimmed to "passed" and one whose moment went by untaken left in the list as "pause not taken". Two kinds of row share the list. The pauses you schedule are fired by the plugin: it sends Klipper's `PAUSE` itself as the print crosses the layer, so the schedule lives with that print — it is dropped when the print ends, a new print starts with an empty list, and nothing survives a Cura restart. A pause the gcode already carries is listed as "baked" and is read-only — it belongs to the slicer, so the ✕ does nothing on it and the layer cannot be scheduled again from here.
 
@@ -615,7 +643,8 @@ The System section can show:
 The dashboard includes direct printer controls when the printer is idle:
 
 - **Macros** — run any non-private `gcode_macro`, with typed parameter fields inferred from `{% set x = params.NAME|default(...) %}` declarations
-- **Live tuning** — speed factor, flow factor and fan sliders that preview during a drag and send one debounced command after release
+- **Live tuning** — speed and extrusion multipliers from 1% to 50,000%, and fan sliders that preview during a drag and send one debounced command after release
+- **Print** — pause, resume and cancel, plus Restart last print when idle. Restart remembers only this Cura session’s last file for the selected printer; it is disabled during printing or a pause and when disconnected or busy. Resume allows 120 seconds for its command to complete, including hotend warming.
 - **Z offset** — current offset display, nudging buttons and clear
 - **Fans and LEDs** — per-object speed/brightness and RGBW colour controls discovered from the printer
 - **PWM outputs** — per-pin percentage controls for `output_pin` objects configured for PWM

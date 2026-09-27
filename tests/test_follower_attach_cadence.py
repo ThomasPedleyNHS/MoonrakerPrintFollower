@@ -101,6 +101,13 @@ class AttachCadenceTests(harness.AttachCadenceTests):
                              self.POLLS * self.POLL_S / 3.0 + 2,
                              "the failing nav render hot-retried per poll")
         self._spacing(starts["nav"], 2.9)
+        # Force the terminal to belong to the final demand, independent of
+        # how quickly the failing worker ran relative to the simulated polls.
+        with harness.patch.object(module, "render_navigation_layer", failing):
+            clock.t = max(clock.t + 5.0, surface.nav.get("wake_at") or 0.0)
+            self._fire_due_wakes(model, armed, clock)
+            self._drain_job(model, surface, self.qt)
+        self.assertEqual(surface.nav["failed"], model._navigation_key(surface))
         # The recovery: the next window's wake renders for real.
         clock.t += 5.0
         self._fire_due_wakes(model, armed, clock)

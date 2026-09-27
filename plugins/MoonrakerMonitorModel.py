@@ -3877,6 +3877,10 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             return
         surface.nav["wake_at"] = None
         surface.nav["failed_hard"] = None
+        # Expiry must also release the exact failed demand. When the last
+        # poll and failed job have the same split, retaining this latch
+        # otherwise prevents the promised retry until another poll changes it.
+        surface.nav["failed"] = None
         # The wake IS the settle's own expiry: the demand it fires for
         # must bake, never re-enter the zoom's coalescing rule (whose
         # anchor — the promoted key — has not moved yet).

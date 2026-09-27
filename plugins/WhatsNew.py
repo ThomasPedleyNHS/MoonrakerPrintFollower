@@ -27,56 +27,47 @@ from typing import List, Tuple
 WHATS_NEW: Tuple[dict, ...] = (
     {
         "version": "4.6.0",
-        "headline": "Version 4.6.0 draws your build plate in the Monitor — "
-            "every object where it actually sits — so a failed print points "
-            "at a place on the plate instead of a name in a list.",
+        "headline": "Version 4.6.0 brings your build plate to Monitor, with a "
+            "GPU Print Follower, smooth live motion and Cura Preview colours.",
         "items": (
-            "The plate map is here: the objects the slicer defined, drawn "
-            "where they are, with the object printing right now "
-            "highlighted, excluded objects red and the ones already printed "
-            "green. It sits in the Information pane as a small map; click it "
-            "to open the picker full size.",
-            "Excluding is a gesture now: triple-click an object on the map "
-            "to exclude it, and triple-click an excluded object to bring it "
-            "back. There is no confirmation dialog — the pop-over counts "
-            "your clicks and the status line under the map reports the "
-            "outcome, a refusal included.",
-            "The old list of object names is gone: the map is the control. "
-            "Hover any object to read its name and state.",
-            "A new Print Follower section draws the print itself on the "
-            "plate: the previous and next layers ghosted, the current layer "
-            "with its printed part filling in as the print runs, and the "
-            "toolhead where it is. Walls, skin, infill and the other "
-            "features have their own colours with a key underneath, and "
-            "travel moves stay hidden until you switch them on.",
-            "The follower is a tool, not a picture: zoom and pan the plate, "
-            "drag the Layer slider to any layer (that alone detaches the "
-            "follow), scrub through the current layer, set the line "
-            "thickness, jump the view onto the toolhead and keep it "
-            "centred — and detach or attach whenever you like. While you "
-            "pan, the picture freezes until you let go (the toolhead keeps "
-            "moving), and the view tracks the print's real position — the "
-            "drift that used to stall and jump the fill is gone.",
-            "The follower can schedule a pause now: drag the Layer slider "
-            "to a layer, and the button under the list schedules a pause at "
-            "the end of that layer — press the same button again to remove "
-            "it. The plugin sends the pause itself as the print crosses the "
-            "layer, the row counting down with its wall-clock ETA, and a "
-            "pause the G-code already carries is listed as baked.",
-            "The temperature chart samples on its own steady one-second "
-            "clock now. A fast auxiliary update setting used to cut the "
-            "advertised 30-minute window down to minutes.",
-            "A print you have already looked at opens quickly the next "
-            "time: the prepared geometry is kept per printer and per "
-            "print, so the second visit skips the whole preparation walk. "
-            "The Diagnostics tab carries the size limit for that store "
-            "(512 MiB per printer by default), beside the clear button, "
-            "which still clears every printer.",
-            "Fixes: quick X and Y jog taps can no longer overshoot their "
-            "limits, the settings sliders grab from either side of the "
-            "handle and keep the keyboard while a save applies.",
+            "The Print Follower and object picker now render on the GPU. "
+            "Pan, smooth zoom, layer scrubbing and width changes stay light; "
+            "the last complete frame stays visible while a layer loads.",
+            "With Smooth travels enabled, lines draw progressively and the "
+            "toolhead follows the indexed path, including curves. Preview "
+            "and Monitor share live motion tracking. Keep centred follows "
+            "the toolhead until you pan.",
+            "Choose any of Cura Preview's six colour modes, with the same "
+            "palette, print-wide gradients and multi-tool material colours. "
+            "Travels show non-retracted, retracting, retracted and priming "
+            "moves. Previous layers are solid; next layers are dashed; "
+            "Layer ghost stays grey.",
+            "Choose 1–8 px lines or True thickness, which estimates each "
+            "extrusion's width from G-code. Anti-aliasing is optional. "
+            "Retractions and Priming can show small hollow arrows after "
+            "they occur, without crowding the zoomed-out view.",
+            "The object map replaces the old list. Hover to read an object's "
+            "name and state; triple-click to exclude it or restore it. "
+            "The status line counts clicks and reports the outcome.",
+            "Seek a layer to inspect it, scrub its progress, or schedule a "
+            "pause at its end. The schedule shows ETAs and lists pauses "
+            "already baked into the G-code as read-only.",
+            "Indexing and preparation yield to the interface more often. "
+            "Bounded memory caches and nearby-layer prefetch speed browsing; "
+            "per-printer disk caches reuse prepared prints and resume "
+            "interrupted preparation. Diagnostics controls their size and "
+            "offers a software-renderer fallback.",
+            "Webcam zoom is smooth. Restart last print remembers a file "
+            "for this Cura session only and is disabled during an active "
+            "print. Resume allows longer for hotend warming. Speed and "
+            "extrusion multipliers accept 1–50,000%.",
+            "Monitor polish includes two-decimal print progress, timestamps "
+            "on Last action, clearer index-download states, aligned button "
+            "text and legends, and hidden download controls that no longer "
+            "accept clicks. The temperature chart samples once a second.",
         ),
     },
+
     {
         "version": "4.5.0",
         "headline": "Version 4.5.0 moves the plugin's settings into its own "

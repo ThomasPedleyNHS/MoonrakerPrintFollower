@@ -3052,25 +3052,28 @@ class PlateCanvasHitTests(RealEngineTestCase):
         # that ended on this very point starves the hover below.
         # Lead with a step off the point so every hover is a real
         # move.
-        QTest.mouseMove(window, canvas.mapToScene(
-            QPointF(scene_x + 8.0, scene_y + 8.0)).toPoint())
-        self.pump(5)
-        target = canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint()
-        QTest.mouseMove(window, target)
         # Native pointer events are asynchronous, especially under coverage.
         # Wait for the MouseArea's coordinates, never for the expected object
         # name: a wrong hit-test must still fail the caller's assertion.
         area = next(child for child in reversed(canvas.childItems())
                     if child.inherits("QQuickMouseArea"))
-        local = area.mapFromScene(QPointF(target))
-        deadline = time.monotonic() + 1.5
-        while time.monotonic() < deadline:
-            self.app.processEvents()
-            if abs(float(area.property("mouseX")) - local.x()) < 1.5 and abs(float(area.property("mouseY")) - local.y()) < 1.5:
-                break
-            QTest.qWait(10)
-        self.assertLess(abs(float(area.property("mouseX")) - local.x()), 1.5, "hover X was not delivered")
-        self.assertLess(abs(float(area.property("mouseY")) - local.y()), 1.5, "hover Y was not delivered")
+        def delivered_move(point):
+            QTest.mouseMove(window, point)
+            local = area.mapFromScene(QPointF(point))
+            deadline = time.monotonic() + 1.5
+            while time.monotonic() < deadline:
+                self.app.processEvents()
+                if abs(float(area.property("mouseX")) - local.x()) < 0.75 and abs(float(area.property("mouseY")) - local.y()) < 0.75:
+                    break
+                QTest.qWait(10)
+            self.assertLess(abs(float(area.property("mouseX")) - local.x()), 0.75, "hover X was not delivered")
+            self.assertLess(abs(float(area.property("mouseY")) - local.y()), 0.75, "hover Y was not delivered")
+
+        # Observe the off-point event before submitting the target. Otherwise
+        # an old target coordinate can satisfy the waiter while the off-point
+        # signal still owns hoveredName; queued native moves then race it.
+        delivered_move(canvas.mapToScene(QPointF(scene_x + 8.0, scene_y + 8.0)).toPoint())
+        delivered_move(canvas.mapToScene(QPointF(scene_x, scene_y)).toPoint())
         return face.property("hoveredName")
 
     def _click_bed(self, window, canvas, face, bed_x, bed_y):

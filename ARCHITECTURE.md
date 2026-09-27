@@ -999,17 +999,18 @@ index restoration use the same scanner state. Preparation estimates width as
 filament volume divided by XY path length and layer height; arcs use their
 subdivided path length rather than the endpoint chord. This is a rectangular
 cross-section estimate, not a measurement of the printed bead. Missing or
-implausible estimates use a 0.4 mm nominal width. Different tool diameters,
-volumetric extrusion and live printer flow overrides are not inferred.
+implausible estimates use a 0.4 mm nominal width. Per-tool filament diameters are retained when metadata provides them.
+Volumetric extrusion and live printer flow overrides are not inferred.
 
-The packed GPU vertex remains 32 bytes. The signed end-corner X magnitude
+The packed GPU vertex is 40 bytes, including speed and tool ID. The signed end-corner X magnitude
 carries millimetre width; its sign identifies the start/end corner. Pixel mode
 uses that sign alone. True-thickness mode scales the magnitude through a
 material uniform, so mode changes and zoom do not repack or upload geometry.
 The saved 1–8 px override remains independent and an explicit width interaction
 returns to it. Travels and the grid retain their existing widths. The software
 fallback paints per-motion widths through its existing raster and Canvas paths.
-Index version 12 and prepared-store version 4 invalidate older cache files.
+The current index version is 14 and prepared-store version is 6; older
+cache files are invalidated and rebuilt.
 
 Retraction events are separate from travel boundaries: negative E or firmware
 G10 retracts; a subsequent positive E or G11 unretracts. G92 never creates a
