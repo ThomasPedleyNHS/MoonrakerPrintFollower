@@ -1878,7 +1878,9 @@ SCENARIOS = [
      "steps": [
          {"op": "sim_set", "state": {"print_stats": {"state": "standby", "filename": ""}}},
          {"op": "wait_model", "prop": "monitorFilename", "value": "", "budget": 15},
-         {"op": "assert_model", "prop": "canRestartLastPrint", "value": False},
+         # g5 just observed scenario1.gcode printing in this same session.
+         # Clearing print_stats must retain that session-only restart target.
+         {"op": "assert_model", "prop": "canRestartLastPrint", "value": True},
          {"op": "sim_set", "state": {"print_stats": {"state": "printing", "filename": "scenario1.gcode"}}},
          {"op": "wait_model", "prop": "monitorState", "contains": "print", "budget": 15},
          # The policy gate (4.2.0): while printing the jog button
@@ -1922,6 +1924,7 @@ SCENARIOS = [
          {"op": "wait_model", "prop": "canPausePrint", "value": True, "budget": 15},
          {"op": "sim_set", "state": {"print_stats": {"state": "complete", "filename": "scenario1.gcode"}}},
          {"op": "wait_model", "prop": "canRestartLastPrint", "value": True, "budget": 15},
+         {"op": "scroll_into_view", "text": "Restart last print"},
          {"op": "click_text", "text": "Restart last print"},
          {"op": "sim_ledger", "needle": "print/start", "method": "POST", "min": 1, "budget": 20},
      ]},
