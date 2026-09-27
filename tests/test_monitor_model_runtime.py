@@ -2485,6 +2485,10 @@ Item {
             # The mapping hides while the index is unavailable: the
             # bed grid must not sit under the download offer's text —
             # inside the face's own slot, never a layout shift.
+            # GPU render passes overlap inside the fixed canvas; visibility
+            # changes cannot reflow controls or any surrounding layout.
+            "visible: gpuFollower.visible",
+            'visible: gpuFollower.visible && (modelData === "ghost" ? root.showBase : (modelData === "prev" ? root.showPrevious : root.showNext))',
             "visible: root.available()",
             # The objects list's current-row bar: a highlight behind
             # the text, never a layout shift.
@@ -2606,6 +2610,11 @@ Item {
             # the feature (the latest entry open, previous versions
             # gated behind their headers) — each gate lands here by
             # name.
+            # The follower's legend changes content with its colour mode.
+            "visible: root.mode === 0",
+            "visible: root.mode >= 2",
+            "visible: root.mode !== 1",
+            "visible: progressFace.colourScheme.mode === 1",
             "visible: !modelData.isLatest",
             "visible: modelData.isLatest || entry.open",
             # The overlay's scroll chevrons (the file manager's

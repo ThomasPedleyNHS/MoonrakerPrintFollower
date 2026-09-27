@@ -569,10 +569,23 @@ def _build(index: LayerMotionIndex, layer: int,
     span_chain: Optional[List[List[float]]] = None
     span_path = 0.0
     span_started = False
+    from .TravelStates import layer_states
+    states = iter(layer_states(index, layer))
+    travel_classes = {}
+    travel_name, travel_chain, last_motion = None, None, -1
     for edge_number, (motion, x0, y0, x1, y1, code, extruding) in enumerate(
             motion_edges(index, layer)):
         _check_yield(should_yield, edge_number)
-        if not extruding:
+        if motion != last_motion:
+            state = next(states, None)
+            last_motion = motion
+        if (state is not None and (not extruding or x0 != x1 or y0 != y1)) or not extruding:
+            name = state or "TRAVEL"
+            if travel_chain is None or name != travel_name:
+                travel_chain = [(x0, y0, float(motion))]
+                travel_classes.setdefault(name, []).append(travel_chain)
+                travel_name = name
+            _push(travel_chain, x1, y1, motion)
             # A travel breaks the class polyline; the span's first vertex
             # is the position the head already held, so the first travel
             # move draws its whole edge.
@@ -588,6 +601,7 @@ def _build(index: LayerMotionIndex, layer: int,
             _push(span_chain, x1, y1, motion)
             span_path += hypot(x1 - x0, y1 - y0)
             continue
+        travel_chain = None
         if span_chain is not None:
             _record_span(span_chain, span_path, span_started, True,
                          travels, start_marks, end_marks)
@@ -606,7 +620,7 @@ def _build(index: LayerMotionIndex, layer: int,
         # the travel itself ends in the next layer — no end glyph.
         _record_span(span_chain, span_path, span_started, False,
                      travels, start_marks, end_marks)
-    return classes, travels, start_marks, end_marks
+    return classes, travels, start_marks, end_marks, travel_classes
 
 
 # The prepared-layer store: (index identity, layer) to the payload the
@@ -701,7 +715,7 @@ def extrusion_widths(index, layer, should_yield=None):
     height = height if isinstance(height, (int, float)) and isfinite(height) and 0.001 <= height <= 10 else 0.2
     diameter = index.filament_diameter
     diameter = diameter if isinstance(diameter, (int, float)) and isfinite(diameter) and 0.1 <= diameter <= 10 else 1.75
-    area = pi * diameter * diameter / 4
+    tools = index.motion_tools[layer] if layer < len(index.motion_tools) else ()
     start = (*_layer_start(index, layer, xs, ys), _layer_start_z(index, layer, zs))
     arcs = index.motion_arcs[layer] if layer < len(index.motion_arcs) else {}
     widths = []
@@ -715,6 +729,8 @@ def extrusion_widths(index, layer, should_yield=None):
             for point in ArcGeometry.tessellate(arcs[motion], start, end):
                 length += hypot(point[0] - previous[0], point[1] - previous[1])
                 previous = point
+        d = index.filament_diameters.get(int(tools[motion]), diameter) if motion < len(tools) else diameter
+        area = pi * d * d / 4
         width = e * area / (length * height) if e > 0 and length > 1e-6 else 0.0
         # Corrupt E, coordinate resets and purging while moving can produce
         # implausible estimates. They must not cover the complete viewport.
@@ -730,7 +746,7 @@ def _prepare(index: LayerMotionIndex, layer: int,
     xs = index.motion_x[layer] if layer < len(index.motion_x) else ()
     if not len(xs):
         return {"classes": {}, "travels": [], "travelStarts": [], "travelEnds": [], "motions": 0}
-    classes, travels, start_marks, end_marks = _build(index, layer, should_yield)
+    classes, travels, start_marks, end_marks, travel_classes = _build(index, layer, should_yield)
     # A chain of fewer than two vertices is a run whose only motions were
     # pure-E: it holds no edge and is dropped here, so the payload never
     # carries a class of it and the painter never sees a point.
@@ -748,6 +764,13 @@ def _prepare(index: LayerMotionIndex, layer: int,
         "travelEnds": end_marks,
         "motions": len(xs),
     }
+    if any(name != "TRAVEL" for name in travel_classes):
+        result["travelClasses"] = {name: [tuple(segment) for segment in _budgeted([segment for segment in segments if len(segment) >= 2], MAX_TRAVEL_POINTS, should_yield)] for name, segments in travel_classes.items() if any(len(segment) >= 2 for segment in segments)}
+    result["layerHeight"] = index.layer_heights[layer] if layer < len(index.layer_heights) else .2
+    result["colourRanges"] = index.colour_ranges
+    if layer < len(index.motion_speeds):
+        result["speeds"] = tuple(index.motion_speeds[layer])
+        result["tools"] = tuple(index.motion_tools[layer])
     widths = extrusion_widths(index, layer, should_yield)
     if widths:
         result["widths"] = widths
@@ -807,6 +830,18 @@ def encode_layer(payload: dict) -> bytes:
     if "widths" in payload:
         values = array("f", payload["widths"])
         parts.extend((b"WIDT", pack("<i", len(values)), values.tobytes()))
+    if "speeds" in payload:
+        import json
+        metadata = json.dumps({"layerHeight": payload.get("layerHeight", .2), "colourRanges": payload.get("colourRanges", {})}, separators=(",", ":")).encode("utf-8")
+        speeds, tools = array("f", payload["speeds"]), array("H", payload.get("tools") or ())
+        if len(speeds) != len(tools) or len(speeds) != payload["motions"]:
+            raise ValueError("invalid motion colour profile")
+        parts.extend((b"COLR", pack("<i", len(metadata)), metadata, speeds.tobytes(), tools.tobytes()))
+    if "travelClasses" in payload:
+        from .TravelStates import TRAVEL_NAMES
+        parts.append(b"TRCL")
+        for name in TRAVEL_NAMES:
+            parts.append(pack_segments((payload["travelClasses"] or {}).get(name) or ()))
     return b"".join(parts)
 
 
@@ -891,13 +926,41 @@ def decode_layer(raw: bytes, checkpoint=None, *, immutable=False) -> dict:
         offset += 4
         count, = unpack_from("<i", raw, offset)
         offset += 4
-        if count < 0 or count != motions or offset + count * 4 != len(raw):
+        if count < 0 or count != motions or offset + count * 4 > len(raw):
             raise ValueError("invalid width profile")
         values = array("f")
         values.frombytes(raw[offset:offset + count * 4])
         if not all(isfinite(value) and 0 <= value <= 10 for value in values):
             raise ValueError("invalid bead width")
         result["widths"] = tuple(values) if immutable else list(values)
+        offset += count * 4
+    if raw[offset:offset + 4] == b"COLR":
+        import json
+        from .PreviewColours import valid_ranges
+        offset += 4
+        size, = unpack_from("<i", raw, offset)
+        offset += 4
+        if not 0 < size <= 4096 or offset + size + motions * 6 > len(raw):
+            raise ValueError("invalid colour profile")
+        metadata = json.loads(raw[offset:offset + size])
+        offset += size
+        height = metadata.get("layerHeight")
+        if not isinstance(height, (int, float)) or not isfinite(height) or not .001 <= height <= 10 or not valid_ranges(metadata.get("colourRanges")):
+            raise ValueError("invalid colour ranges")
+        speeds, tools = array("f"), array("H")
+        speeds.frombytes(raw[offset:offset + motions * 4])
+        tools.frombytes(raw[offset + motions * 4:offset + motions * 6])
+        if any(not isfinite(v) or not 0 <= v <= 1e6 for v in speeds) or any(v >= 16 for v in tools):
+            raise ValueError("invalid speed/tool profile")
+        result.update(metadata, speeds=tuple(speeds) if immutable else list(speeds), tools=tuple(tools) if immutable else list(tools))
+        offset += motions * 6
+    if raw[offset:offset + 4] == b"TRCL":
+        from .TravelStates import TRAVEL_NAMES
+        offset += 4
+        groups = {name:read_segments() for name in TRAVEL_NAMES}
+        result["travelClasses"] = {name:segments for name,segments in groups.items() if segments}
+    if offset != len(raw):
+        raise ValueError("trailing prepared data")
     return result
 
 

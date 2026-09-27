@@ -1894,14 +1894,14 @@ class PlateFaceRenderTests(RealEngineTestCase):
                     break
         return (first, last)
 
-    def _pixel_diff(self, image, baseline, face, window):
+    def _pixel_diff(self, image, baseline, face, window, sample_step=4):
         """The sampled pixels that differ from the baseline grab (a
         threaded canvas's late frame reads as a diff; a settled
         identical picture reads zero)."""
         origin = face.mapToItem(window.contentItem(), QPointF(0.0, 0.0))
         diffs = 0
-        for row in range(0, int(face.height()), 4):
-            for col in range(0, int(face.width()), 4):
+        for row in range(0, int(face.height()), sample_step):
+            for col in range(0, int(face.width()), sample_step):
                 if image.pixel(int(origin.x()) + col, int(origin.y()) + row) \
                         != baseline.pixel(int(origin.x()) + col, int(origin.y()) + row):
                     diffs += 1

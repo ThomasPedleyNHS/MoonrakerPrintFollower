@@ -10,6 +10,8 @@ under the workstream-4 schema.
 from __future__ import annotations
 
 SCENARIO_MAP = {
+    "MoonrakerMonitorModel.setFollowerColourMode": "b11",
+    "moonrakerFollowerColourMode": "b11",
     "MoonrakerMonitorModel.setFollowerShowRetractions": "b11",
     "MoonrakerMonitorModel.setFollowerTrueThickness": "b11",
     "MoonrakerMonitorModel.setFollowerShowUnretractions": "b11",

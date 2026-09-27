@@ -21,7 +21,8 @@ class GpuCanvasIsolationTests(harness.PlateFaceRenderTests):
         # The capture harness supplies an inert GPU item: changing its
         # capability exercises real QML policy without needing a GL context.
         candidates = [item for item in face.childItems()
-                      if item.metaObject().indexOfProperty("supported") >= 0]
+                      if item.metaObject().indexOfProperty("supported") >= 0
+                      and item.property("dataSource") is None]
         self.assertEqual(len(candidates), 1)
         gpu = candidates[0]
         self.assertTrue(gpu.setProperty("supported", True))

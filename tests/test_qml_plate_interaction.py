@@ -13,22 +13,26 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
         self._printer.setLayers({"prev": None, "current": layer, "next": None})
         self._printer.setSplit(0)
         self._pump_ms(100)
-        empty = window.grabWindow()
+        empty = self._settled_frame(window, face)
+        # A hollow 1 px glyph can fall entirely between a four-pixel
+        # census grid on another platform. Inspect every painted pixel.
+        def diff(image, baseline):
+            return self._pixel_diff(image, baseline, face, window, sample_step=1)
         self._printer.setSplit(1)
         self._pump_ms(100)
-        retracted = window.grabWindow()
-        self.assertGreater(self._pixel_diff(retracted, empty, face, window), 0)
+        retracted = self._settled_frame(window, face, painted=lambda image: diff(image, empty) > 0)
+        self.assertGreater(diff(retracted, empty), 0)
         self._printer.setSplit(2)
         self._pump_ms(100)
-        before_prime = window.grabWindow()
-        self.assertEqual(self._pixel_diff(before_prime, retracted, face, window), 0)
+        before_prime = self._settled_frame(window, face)
+        self.assertEqual(diff(before_prime, retracted), 0)
         self._printer.setSplit(3)
         self._pump_ms(100)
-        primed = window.grabWindow()
-        self.assertGreater(self._pixel_diff(primed, before_prime, face, window), 0)
+        primed = self._settled_frame(window, face, painted=lambda image: diff(image, before_prime) > 0)
+        self.assertGreater(diff(primed, before_prime), 0)
         self._printer.setSplit(0)
         self._pump_ms(100)
-        self.assertEqual(self._pixel_diff(window.grabWindow(), empty, face, window), 0)
+        self.assertEqual(diff(self._settled_frame(window, face, painted=lambda image: diff(image, empty) == 0), empty), 0)
 
     def test_the_native_prefix_and_the_qml_tail_match_intensity_at_production_width(self):
         # The review's finding #3, closed: at the production

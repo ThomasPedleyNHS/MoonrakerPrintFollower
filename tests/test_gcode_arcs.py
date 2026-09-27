@@ -649,7 +649,7 @@ class ArcCacheTests(unittest.TestCase):
         # nothing about the file it came from: every v9 blob is refused
         # rather than read as an arc-free one.
         blob = self._blob(ARC_SOURCE)
-        self.assertEqual(GCodeIndex._CACHE_VERSION, 12,
+        self.assertEqual(GCodeIndex._CACHE_VERSION, 14,
                          "the cache version must move past the era that could drop arcs")
         self._rewrite_header(blob, dict(self._header_of(blob), version=9))
         self.assertIsNone(self.cache.load(self.identity),
@@ -730,7 +730,7 @@ class ArcCacheTests(unittest.TestCase):
         # chord. Accepting one would silently regress the geometry, so it
         # is refused and the file is read again.
         blob = self._blob(ARC_SOURCE)
-        self.assertEqual(self._header_of(blob)["version"], 12)
+        self.assertEqual(self._header_of(blob)["version"], 14)
         self._rewrite_header(blob, dict(self._header_of(blob), version=8))
         self.assertIsNone(self.cache.load(self.identity),
                           "a pre-arc cache blob was accepted as arc-aware")
@@ -912,7 +912,7 @@ class ArcPayloadGuardTests(unittest.TestCase):
         self.assertEqual(json.loads(json.dumps(layer_polylines(index, 0))),
                          {"classes": {"unknown": [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0],
                                                    [0.0, 10.0, 1.0]]]},
-                          "travels": [], "travelStarts": [], "travelEnds": [], "motions": 2})
+                          "travels": [], "travelStarts": [], "travelEnds": [], "motions": 2, "layerHeight": .2, "colourRanges": {}})
 
     def test_descriptors_for_motions_the_layer_lacks_are_ignored(self):
         index = LayerMotionIndex(

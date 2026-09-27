@@ -262,7 +262,7 @@ class RendererParityTests(_parent.RealEngineTestCase):
                     return c
             return None
 
-        def painted(image, pan_x, timeout=15.0):
+        def painted(image, pan_x, previous=None, timeout=15.0):
             """The same frame once the raster's own ink is on it. The
             warm raster is read off the file system, so a fixed pump is
             a host assumption: the macOS CI's slower read handed the
@@ -276,10 +276,18 @@ class RendererParityTests(_parent.RealEngineTestCase):
             earlier rather than later (the Windows runner's "the grid
             never painted" is the stroke-only wait). A raster that never
             arrives still fails, on its own assertion."""
+            # Require the new pan's delivered frame, then two matching
+            # grabs. A fixed pump or a lone "ink exists" census can accept
+            # a stale/transitional texture on macOS under suite load.
             import time
             deadline = time.monotonic() + timeout
-            while (stroke_right(image, pan_x) is None
-                   or grid_col(image, pan_x) is None) and time.monotonic() < deadline:
+            last = None
+            while time.monotonic() < deadline:
+                has_landmarks = stroke_right(image, pan_x) is not None and grid_col(image, pan_x) is not None
+                changed = previous is None or image != previous
+                if has_landmarks and changed and last is not None and image == last:
+                    return image
+                last = image
                 self.app.processEvents()
                 time.sleep(0.02)
                 image = window.grabWindow()
@@ -290,7 +298,7 @@ class RendererParityTests(_parent.RealEngineTestCase):
         col_grid_a = grid_col(first, pan_a)
         col_stroke_a = stroke_right(first, pan_a)
         pan_b = pan_a - 40.0
-        second = painted(grab(pan_b), pan_b)
+        second = painted(grab(pan_b), pan_b, previous=first)
         col_grid_b = grid_col(second, pan_b)
         col_stroke_b = stroke_right(second, pan_b)
         self.assertIsNotNone(col_grid_a, "the grid never painted")

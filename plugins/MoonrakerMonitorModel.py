@@ -442,7 +442,7 @@ class _RenderSurface:
                 round(float(plot.get("offsetX") or 0.0), 6), round(float(plot.get("offsetY") or 0.0), 6),
                 round(float(plot.get("sx") or 0.0), 6), round(float(plot.get("sy") or 0.0), 6),
                 round(float(plot.get("bedXMin") or 0.0), 6), round(float(plot.get("bedYMax") or 0.0), 6),
-                bool(view.get("trueThickness")), float(view.get("lineWidthPx") or 0.0))
+                bool(view.get("trueThickness")), float(view.get("lineWidthPx") or 0.0), json.dumps(view.get("colourScheme") or {}, sort_keys=True))
 
 
 class MoonrakerMonitorModel(PrinterOutputModel):
@@ -600,7 +600,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                  pause_at_layer_block=None, request_pause_toggle=None,
                  request_pause_remove=None, request_pause_clear=None,
                  download_failed=None, request_download_progress=None, cancel_file_download=None,
-                 identity=None, state_store=None, persistence=None, index_service=None):
+                 identity=None, state_store=None, persistence=None, index_service=None, colour_scheme=None):
         super().__init__(output_controller, number_of_extruders)
         self._client, self._print_state, self._config, self._apply_config, self._mesh = \
             client, print_state, config, apply_config, bed_mesh
@@ -610,6 +610,9 @@ class MoonrakerMonitorModel(PrinterOutputModel):
         # accounting reads the tiers back. Optional — the tests and
         # the harness mount without it.
         self._index_service = index_service
+        self._colour_scheme = colour_scheme
+        if colour_scheme is not None:
+            colour_scheme.changed.connect(self._on_colour_scheme_changed)
         # The follower's anchor seam (the pop-over's layer slider): the
         # model publishes the state, the coordinator owns the payload.
         # The split seam is the progress slider's scrub, same shape.
@@ -1910,6 +1913,23 @@ class MoonrakerMonitorModel(PrinterOutputModel):
     followerKeepCentred = value_property(bool, "followerKeepCentred", followerViewChanged, False)
     followerMotionSmoothing = value_property(bool, "followerMotionSmoothing", followerViewChanged, True)
     followerSoftwareRendering = value_property(bool, "followerSoftwareRendering", followerViewChanged, False)
+    @pyqtProperty("QVariantMap", notify=followerViewChanged)
+    def followerColourScheme(self):
+        return self._colour_scheme.snapshot if self._colour_scheme is not None else {"mode": 1}
+
+    @pyqtSlot(int)
+    def setFollowerColourMode(self, mode):
+        if self._colour_scheme is not None:
+            self._colour_scheme.set_mode(mode)
+
+    def _on_colour_scheme_changed(self):
+        self.followerViewChanged.emit()
+        for surface in self._plate_surfaces.values():
+            effective = surface.stage["view"] or surface.view
+            if effective:
+                surface.stage["view"] = dict(effective, colourScheme=self.followerColourScheme)
+                self._arm_context_flush(surface)
+
     followerTrueThickness = value_property(bool, "followerTrueThickness", followerViewChanged, False)
     followerLineScale = value_property(float, "followerLineScale", followerViewChanged, 1.0)
     followerTravelVisualRatio = value_property(float, "followerTravelVisualRatio", followerViewChanged,
@@ -3765,7 +3785,8 @@ class MoonrakerMonitorModel(PrinterOutputModel):
             dpr=round(min(2.0, max(1.0, float(
                 surface.view.get("dpr") or 1.0))), 6),
             zoom=round(float(surface.view.get("scale") or 1.0), 6),
-            true_thickness=bool(surface.view.get("trueThickness")))
+            true_thickness=bool(surface.view.get("trueThickness")),
+            colour_scheme=json.dumps(surface.view.get("colourScheme") or {}, sort_keys=True))
 
 
     @staticmethod
@@ -3908,6 +3929,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 # geometry) switches to the warm raster as one.
                 "bedWidth": float(self.bedMeshMachineWidth or 0.0),
                 "bedDepth": float(self.bedMeshMachineDepth or 0.0)}
+        view["colourScheme"] = surface.view.get("colourScheme") or {}
         view["trueThickness"] = bool(surface.view.get("trueThickness"))
         if "lineWidthPx" in surface.view:
             view["lineWidthPx"] = surface.view["lineWidthPx"]
@@ -4656,6 +4678,7 @@ class MoonrakerMonitorModel(PrinterOutputModel):
                 "compact": bool(compact),
                 "panX": float(panX), "panY": float(panY),
                 "dpr": min(2.0, max(1.0, float(dpr)))}
+        view["colourScheme"] = self.followerColourScheme
         view["trueThickness"] = self._follower_true_thickness
         if pixelWidth > 0:
             view["lineWidthPx"] = float(pixelWidth)

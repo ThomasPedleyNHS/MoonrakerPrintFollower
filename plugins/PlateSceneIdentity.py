@@ -26,6 +26,7 @@ class NavigationSceneKey(NamedTuple):
     plot: tuple
     dpr: float
     true_thickness: bool = False
+    colour_scheme: str = ""
     zoom: float = 1.0
 
     def without_progress(self):

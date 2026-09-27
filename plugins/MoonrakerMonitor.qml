@@ -3407,13 +3407,23 @@ Component {
                         }
                     }
 
+                    FollowerColourControls {
+                        Layout.fillWidth: true
+                        printerModel: root.printer
+                        face: progressFace
+                    }
+
                     // The colour key: the class palette the progress canvas
                     // paints with, plus the pending and travel styles (the
                     // live request). One wrapping flow of swatch+label
                     // pairs, the picker's legend idiom.
                     Flow {
+                        visible: progressFace.colourScheme.mode === 1
                         Layout.fillWidth: true
                         spacing: UM.Theme.getSize("thin_margin").width
+                        UM.Label {
+                            text: "Feature:"
+                        }
                         Row {
                             spacing: 2 * screenScaleFactor
                             Rectangle {
@@ -3489,19 +3499,6 @@ Component {
                             }
                             UM.Label {
                                 text: "Skirt"
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-                        }
-                        Row {
-                            spacing: 2 * screenScaleFactor
-                            Rectangle {
-                                width: 10 * screenScaleFactor
-                                height: 1 * screenScaleFactor
-                                color: MoonrakerTheme.plateTravel
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-                            UM.Label {
-                                text: "Travel"
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }

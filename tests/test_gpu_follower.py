@@ -12,6 +12,72 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @unittest.skipUnless(QT_AVAILABLE, "Install PyQt6 to test retained geometry")
 class RetainedGeometryTests(unittest.TestCase):
+    def test_qml_geometry_source_binding_is_a_qobject_pointer(self):
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtQml import QQmlComponent, QQmlEngine, qmlRegisterType
+        from PyQt6 import sip
+        from plugins.GpuFollower import GpuFollower
+        qmlRegisterType(GpuFollower, "FollowerOpacityTest", 1, 0, "StrokeItem")
+        engine = QQmlEngine(); component = QQmlComponent(engine)
+        component.setData(b'''import QtQuick 2.15
+import FollowerOpacityTest 1.0
+Item {
+    StrokeItem { id: source; objectName: "source" }
+    StrokeItem { objectName: "consumer"; dataSource: source }
+}''', QUrl())
+        root = component.create()
+        self.assertIsNotNone(root, [error.toString() for error in component.errors()])
+        source = root.findChild(GpuFollower, "source")
+        consumer = root.findChild(GpuFollower, "consumer")
+        self.assertIs(consumer.dataSource, source)
+        source._data = (("current", "SKIN", (), b""),)
+        source.readyChanged.emit()
+        self.assertIs(consumer._data, source._data)
+        sip.delete(root); sip.delete(engine)
+
+    def test_translucent_passes_share_preparation_hold_frames_and_use_texture_viewport(self):
+        from PyQt6 import sip
+        from PyQt6.QtCore import QObject
+        from PyQt6.QtQuick import QQuickWindow
+        from plugins.GpuFollower import GpuFollower, prepare
+        from plugins.GpuStrokeMaterial import pack_shader
+        window = QQuickWindow(); window.resize(1000, 800)
+        source = GpuFollower(window.contentItem())
+        consumer = GpuFollower(window.contentItem()); consumer.setWidth(400); consumer.setHeight(300)
+        payload = {"classes": {"SKIN": [[(0, 0, 0), (10, 0, 0), (20, 0, 1)]]}}
+        data = pack_shader(prepare((("current", payload), ("prev", payload), ("next", payload))))
+        source._data = data; source._layers = {"current": QObject()}
+        consumer.dataSource = source
+        self.assertIs(consumer._data, source._data)
+        self.assertEqual(consumer._work.futures, [])
+        settings = {"isolatedRole": "ghost", "split": 0, "showGrid": False, "lineWidth": 8}
+        consumer.settings = settings
+        node = consumer.updatePaintNode(None, None)
+        self.assertEqual(node._grid_nodes, [])
+        self.assertEqual(node._marker_nodes, [])
+        for role,_name,_motions,_data,base,printed in node._groups:
+            self.assertEqual(base.geometry().vertexCount(), 12 if role == "current" else 0)
+            self.assertEqual(base._material.colour.alphaF(), 1)
+            self.assertEqual(base._material.viewport, (400, 300))
+            self.assertEqual(printed.geometry().vertexCount(), 0)
+        # Progress belongs to the direct prefix pass; it does not dirty the
+        # fixed ghost geometry or require another worker/conversion.
+        ghost = next(row[-2] for row in node._groups if row[0] == "current")
+        pointer = int(ghost.geometry().vertexData())
+        source.settings = {"split": 1}
+        self.assertIs(consumer._data, data)
+        consumer.updatePaintNode(node, None)
+        self.assertEqual(pointer, int(ghost.geometry().vertexData()))
+        source._generation = 1; source._preparing_generation = 1; source._data = ()
+        source.readyChanged.emit()
+        self.assertIs(consumer.updatePaintNode(node, None), node)
+        source._prepared(1, data)
+        self.assertIs(consumer._data, source._data)
+        sip.delete(source)
+        self.assertIsNone(consumer.dataSource)
+        self.assertEqual(consumer._data, ())
+        sip.delete(node); sip.delete(window)
+
     def test_extruder_events_follow_completed_playback_and_disappear_on_scrub_back(self):
         from plugins.GpuFollower import GpuFollower, prepare, marker_counts, marker_geometry
         from plugins.GpuStrokeMaterial import pack_shader
@@ -57,7 +123,7 @@ class RetainedGeometryTests(unittest.TestCase):
         values = array("f")
         values.frombytes(data[0][3])
         self.assertAlmostEqual(abs(values[4]), .4)
-        self.assertAlmostEqual(abs(values[48 + 4]), .8)
+        self.assertAlmostEqual(abs(values[60 + 4]), .8)
         window = QQuickWindow()
         item = GpuFollower(window.contentItem())
         item._data = data
@@ -104,7 +170,7 @@ class RetainedGeometryTests(unittest.TestCase):
         vertices = array("f")
         vertices.frombytes(pack_shader(raw)[0][3])
         self.assertEqual((vertices[6], vertices[7]), (0, .75))
-        self.assertEqual((vertices[6 * 8 + 6], vertices[6 * 8 + 7]), (.75, .25))
+        self.assertEqual((vertices[6 * 10 + 6], vertices[6 * 10 + 7]), (.75, .25))
 
     def test_marker_tracks_every_curve_subedge_and_matches_shader_fraction(self):
         from plugins.GpuFollower import GpuFollower

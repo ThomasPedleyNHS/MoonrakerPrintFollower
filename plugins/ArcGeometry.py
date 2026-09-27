@@ -159,6 +159,18 @@ def _ceil_bound(value: float, ceiling: int) -> int:
     return int(ceil(value))
 
 
+def path_length(desc, start, target, *, xy=False):
+    """Deposited path length; XY arcs use their analytic circular length."""
+    frame = _frame(start, target, desc)
+    radius, sweep, axis_h = frame[2], frame[4], frame[7]
+    if not xy:
+        return hypot(radius * sweep, float(target[axis_h]) - float(start[axis_h]))
+    if axis_h == 2:
+        return abs(radius * sweep)
+    points = [start] + tessellate(desc, start, target)
+    return sum(hypot(b[0]-a[0], b[1]-a[1]) for a, b in zip(points, points[1:], strict=False))
+
+
 def subdivisions(desc: ArcDescriptor, start: Sequence[float], target: Sequence[float], *,
                  max_sagitta: float = MAX_SAGITTA_MM, max_segment: float = MAX_SEGMENT_MM,
                  max_segments: int = MAX_SEGMENTS) -> int:

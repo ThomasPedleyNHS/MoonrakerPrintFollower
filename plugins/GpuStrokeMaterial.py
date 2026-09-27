@@ -3,6 +3,7 @@
 from array import array
 from pathlib import Path
 import struct
+from PyQt6.QtGui import QColor
 from PyQt6.QtQuick import QSGMaterial, QSGMaterialType, QSGMaterialShader, QSGGeometry
 
 TYPE = QSGMaterialType()
@@ -31,7 +32,10 @@ class FollowerStrokeShader(QSGMaterialShader):
             ]
             + [float(new.rounded), new.split, float(new.clip), float(new.physical)]
         )
-        data = struct.pack("<28f", *values)
+        values += list(new.colour_options)
+        for ink in new.palette:
+            values += [ink.redF(), ink.greenF(), ink.blueF(), ink.alphaF()]
+        data = struct.pack("<96f", *values)
         state.uniformData().replace(0, len(data), data)
         return True
 
@@ -47,6 +51,8 @@ class FollowerStrokeMaterial(QSGMaterial):
         self.split = 0.0
         self.clip = False
         self.physical = False
+        self.colour_options = (-1., 0., 0., .2)
+        self.palette = tuple(QColor("#888888") for _ in range(16))
         self.setFlag(self.Flag.Blending, True)
         self.setFlag(self.Flag.RequiresFullMatrix, True)
 
@@ -54,8 +60,8 @@ class FollowerStrokeMaterial(QSGMaterial):
         return TYPE
 
     def compare(self, other):
-        a = (self.colour.rgba(), self.width, self.aa, self.rounded, self.viewport, self.split, self.clip, self.physical)
-        b = (other.colour.rgba(), other.width, other.aa, other.rounded, other.viewport, other.split, other.clip, other.physical)
+        a = (self.colour.rgba(), self.width, self.aa, self.rounded, self.viewport, self.split, self.clip, self.physical, self.colour_options, tuple(c.rgba() for c in self.palette))
+        b = (other.colour.rgba(), other.width, other.aa, other.rounded, other.viewport, other.split, other.clip, other.physical, other.colour_options, tuple(c.rgba() for c in other.palette))
         return (a > b) - (a < b)
 
     def createShader(self, mode):
@@ -70,8 +76,9 @@ ATTR = QSGGeometry.AttributeSet(
         QSGGeometry.Attribute.create(1, 2, QSGGeometry.Type.FloatType.value),
         QSGGeometry.Attribute.create(2, 2, QSGGeometry.Type.FloatType.value),
         QSGGeometry.Attribute.create(3, 2, QSGGeometry.Type.FloatType.value),
+        QSGGeometry.Attribute.create(4, 2, QSGGeometry.Type.FloatType.value),
     ],
-    32,
+    40,
 )
 
 
@@ -90,13 +97,14 @@ def pack_shader(data, cancel=None):
         if cancel is not None and cancel.is_set():
             return ()
         points = np.frombuffer(packed, dtype=np.float32).reshape(-1, 4)
-        vertices = np.empty((len(points), 6, 8), dtype=np.float32)
+        vertices = np.empty((len(points), 6, 10), dtype=np.float32)
         for i, corner in enumerate(corners):
             vertices[:, i, :2] = points[:, :2] if corner[0] < 0 else points[:, 2:]
         vertices[:, :, 2:4] = (points[:, 2:] - points[:, :2])[:, None, :]
         vertices[:, :, 4:6] = corners[None, :, :]
         if len(row) > 4:
             vertices[:, :, 4] *= np.frombuffer(row[4], dtype=np.float32)[:, None]
+        vertices[:, :, 8:10] = np.frombuffer(row[5], dtype=np.float32).reshape(-1, 2)[:, None, :] if len(row) > 5 else 0
         motion = np.asarray(motions, dtype=np.float32)
         starts = np.zeros(len(points), dtype=np.float32)
         spans = np.ones(len(points), dtype=np.float32)
@@ -127,6 +135,9 @@ def _pack_stdlib(data, cancel=None):
         widths = array("f")
         if len(row) > 4:
             widths.frombytes(row[4])
+        metrics = array("f")
+        if len(row) > 5:
+            metrics.frombytes(row[5])
         points, vertices = array("f"), array("f")
         points.frombytes(packed)
         ranges = []
@@ -147,6 +158,6 @@ def _pack_stdlib(data, cancel=None):
                 return ()
             x, y, ex, ey = points[offset : offset + 4]
             for cx, cy in corners:
-                vertices.extend((x if cx < 0 else ex, y if cx < 0 else ey, ex - x, ey - y, cx * (widths[offset // 4] if widths else 1.0), cy, *ranges[offset // 4]))
+                vertices.extend((x if cx < 0 else ex, y if cx < 0 else ey, ex - x, ey - y, cx * (widths[offset // 4] if widths else 1.0), cy, *ranges[offset // 4], *(metrics[offset // 2:offset // 2 + 2] if metrics else (0., 0.))))
         result.append((role, name, motions, vertices.tobytes()))
     return tuple(result)

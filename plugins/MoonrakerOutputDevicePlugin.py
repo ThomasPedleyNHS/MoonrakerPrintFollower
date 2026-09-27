@@ -8,6 +8,7 @@ from PyQt6.QtQml import QQmlComponent
 from UM.Logger import Logger
 from UM.OutputDevice.OutputDevicePlugin import OutputDevicePlugin
 
+from .FollowerColourScheme import FollowerColourScheme
 from .MoonrakerMonitorModel import MoonrakerMonitorModel
 from .MoonrakerOutputDevice import MoonrakerOutputController, MoonrakerOutputDevice
 
@@ -19,6 +20,7 @@ class MoonrakerOutputDevicePlugin(OutputDevicePlugin):
         super().__init__()
         self._application = application
         self._follower = follower
+        self._colour_scheme = FollowerColourScheme(application) if hasattr(application, "getPreferences") else None
         self._devices: Dict[str, MoonrakerOutputDevice] = {}
         self._current: Optional[MoonrakerOutputDevice] = None
         # The routed monitor (the 4.5.0 ownership fix): the monitor
@@ -61,6 +63,8 @@ class MoonrakerOutputDevicePlugin(OutputDevicePlugin):
         opening reuses its compiled types instead of waiting several seconds.
         """
         engine = getattr(self._application, "_qml_engine", None)
+        if self._running and engine is not None and self._colour_scheme is not None:
+            self._colour_scheme.host_ready()
         if not self._running or self._current is None or engine is None \
                 or engine is self._monitor_qml_engine:
             return
@@ -222,6 +226,7 @@ class MoonrakerOutputDevicePlugin(OutputDevicePlugin):
                 request_pause_clear=self._pause_intent("clearPausesRequested"),
                 persistence=self._follower.persistence,
                 identity=self._follower.current_printer_identity,
+                colour_scheme=self._colour_scheme,
                 index_service=self._follower.index(),
             )
             # The Preview wirings are NOT made here: the grant below

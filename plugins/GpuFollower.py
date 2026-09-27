@@ -11,7 +11,7 @@ import struct
 import threading
 import time
 
-from PyQt6.QtCore import pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QMatrix4x4, QGuiApplication
 from PyQt6.QtQuick import (
@@ -25,6 +25,8 @@ from PyQt6.QtQuick import (
     QSGRendererInterface,
 )
 
+from .TravelStates import is_travel
+from .PreviewColours import DEFAULT_CLASSES
 from .GpuStrokeMaterial import FollowerStrokeMaterial, ATTR, pack_shader
 
 _POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="MPF-GPU")
@@ -53,6 +55,7 @@ COLOURS = {
     "SKIRT": "#00897b",
     "TRAVEL": "#b085e8",
 }
+COLOURS.update({name: colour for name, colour in DEFAULT_CLASSES.items() if is_travel(name)})
 WIDE_VERTICES = 30  # Rectangle + two four-triangle semicircular caps.
 CAP_POINTS = tuple(
     (math.cos(-math.pi / 2 + i * math.pi / 4), math.sin(-math.pi / 2 + i * math.pi / 4)) for i in range(5)
@@ -106,7 +109,10 @@ def prepare(payloads, cancel=None):
                         packed.extend((x, y, x, y))
                     prepared.append((role, name, tuple(point[2] for point in marks), packed.tobytes()))
         groups = dict(payload.get("classes") or {})
-        groups["TRAVEL"] = payload.get("travels") or []
+        if "travelClasses" in payload:
+            groups.update(payload["travelClasses"])
+        else:
+            groups["TRAVEL"] = payload.get("travels") or []
         for name, segments in groups.items():
             edges = []
             for points in segments:
@@ -139,7 +145,12 @@ def prepare(payloads, cancel=None):
                         deadline = time.perf_counter() + 0.008
                 profile = payload.get("widths") or ()
                 widths = array("f", (max(0.001, profile[int(edge[0])]) if 0 <= int(edge[0]) < len(profile) and profile[int(edge[0])] > 0 else 0.4 for edge in edges))
-                prepared.append((role, name, tuple(edge[0] for edge in edges), packed.tobytes(), widths.tobytes()))
+                speeds, tools = payload.get("speeds") or (), payload.get("tools") or ()
+                metrics = array("f")
+                for edge in edges:
+                    motion = int(edge[0])
+                    metrics.extend((speeds[motion] if motion < len(speeds) else 0., tools[motion] if motion < len(tools) else 0))
+                prepared.append((role, name, tuple(edge[0] for edge in edges), packed.tobytes(), widths.tobytes(), metrics.tobytes()))
     result = tuple(prepared)
     # Cache keys hold source payloads to prevent id reuse. Account for their
     # retained Python points as well as packed vertices / motion integers.
@@ -148,12 +159,12 @@ def prepare(payloads, cancel=None):
     # even when their actual storage comfortably fitted the cache.
     source_points = sum(len(segment) for _role, payload in payloads if payload
                         for segments in (tuple((payload.get("classes") or {}).values())
-                                         + (payload.get("travels") or (),))
+                                         + (payload.get("travels") or (),) + tuple((payload.get("travelClasses") or {}).values()))
                         for segment in segments)
     source_points += sum(len(payload.get(key) or ()) for _role, payload in payloads if payload
                          for key in ("retractions", "unretractions"))
-    profile_bytes = sum(len(payload.get("widths") or ()) * 32 for _role, payload in payloads if payload)
-    charge = profile_bytes + sum(len(row[3]) + (len(row[4]) if len(row) > 4 else 0) + len(row[2]) * 36 for row in result) + source_points * 192
+    profile_bytes = sum(sum(len(payload.get(key) or ()) * cost for key,cost in (("widths",32),("speeds",32),("tools",28))) for _role, payload in payloads if payload)
+    charge = profile_bytes + sum(len(row[3]) + (sum(len(column) for column in row[4:])) + len(row[2]) * 36 for row in result) + source_points * 192
     if (cancel is None or not cancel.is_set()) and charge <= _CACHE_BYTES:
         with _CACHE_LOCK:
             _CACHE[key] = (payloads, result, charge)
@@ -169,7 +180,7 @@ def stroke_geometry(data, width, sx, sy, travel_ratio=0.7, rounded=True, cancel=
     deadline = time.perf_counter() + 0.008
     for row in data:
         role, name, motions, packed = row[:4]
-        stroke_width = width * travel_ratio if name == "TRAVEL" else width
+        stroke_width = width * travel_ratio if is_travel(name) else width
         points, triangles = array("f"), array("f")
         points.frombytes(packed)
         for i in range(0, len(points), 4):
@@ -264,6 +275,7 @@ def marker_geometry(data, sx, sy, scale, compact, retractions, unretractions, li
 
 
 class GpuFollower(QQuickItem):
+    dataSourceChanged = pyqtSignal()
     layersChanged = pyqtSignal()
     settingsChanged = pyqtSignal()
     readyChanged = pyqtSignal()
@@ -277,6 +289,7 @@ class GpuFollower(QQuickItem):
         app = QGuiApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._work.close)
+        self._source = None
         self._layers = {}
         self._settings = {}
         self._generation = 0
@@ -284,6 +297,43 @@ class GpuFollower(QQuickItem):
         self._data = ()
         self._render_generation = -1
         self.prepared.connect(self._prepared)
+
+    @pyqtProperty(QObject, notify=dataSourceChanged)
+    def dataSource(self):
+        return self._source
+
+    @dataSource.setter
+    def dataSource(self, source):
+        if source is self._source:
+            return
+        if source is not None and (not isinstance(source, GpuFollower) or source is self or source._source is not None):
+            raise ValueError("GPU data source must be an independent follower")
+        if self._source is not None:
+            self._source.readyChanged.disconnect(self._sync_source)
+            self._source.layersChanged.disconnect(self._sync_source)
+            self._source.destroyed.disconnect(self._source_destroyed)
+        self._source = source
+        self._work.close()
+        if source is not None:
+            source.readyChanged.connect(self._sync_source)
+            source.layersChanged.connect(self._sync_source)
+            source.destroyed.connect(self._source_destroyed)
+        self._sync_source()
+        self.dataSourceChanged.emit()
+
+    def _source_destroyed(self):
+        self._source = None
+        self._sync_source()
+        self.dataSourceChanged.emit()
+
+    def _sync_source(self):
+        source = self._source
+        self._data = source._data if source is not None else ()
+        self._layers = source._layers if source is not None else {}
+        self._generation = source._generation if source is not None else 0
+        self._preparing_generation = source._preparing_generation if source is not None else None
+        self.readyChanged.emit()
+        self.update()
 
     @pyqtSlot(float, result="QVariantMap")
     def pointAtMotion(self, progress):
@@ -305,12 +355,12 @@ class GpuFollower(QQuickItem):
                 # Arc subedges share a motion ID, with cumulative path fractions.
                 while lo + 1 < hi:
                     middle = (lo + hi) // 2
-                    start = struct.unpack_from("<f", packed, middle * 192 + 24)[0]
+                    start = struct.unpack_from("<f", packed, middle * 240 + 24)[0]
                     if start <= progress:
                         lo = middle
                     else:
                         hi = middle
-                offset = lo * 192
+                offset = lo * 240
                 x, y, dx, dy = struct.unpack_from("<4f", packed, offset)
                 start, span = struct.unpack_from("<2f", packed, offset + 24)
                 amount = min(1.0, max(0.0, (progress - start) / max(span, 1e-12)))
@@ -318,7 +368,7 @@ class GpuFollower(QQuickItem):
             if progress == motion:
                 previous = bisect.bisect_right(motions, motion - 1) - 1
                 if previous >= 0 and motions[previous] == motion - 1:
-                    x, y, dx, dy = struct.unpack_from("<4f", packed, previous * 192)
+                    x, y, dx, dy = struct.unpack_from("<4f", packed, previous * 240)
                     endpoint = {"valid": True, "x": x + dx, "y": y + dy}
         return endpoint or {"valid": False}
 
@@ -330,6 +380,8 @@ class GpuFollower(QQuickItem):
     def layers(self, value):
         value = dict(value or {})
         if value == self._layers:
+            return
+        if self._source is not None:
             return
         previous = self._layers
         self._layers = value
@@ -440,6 +492,8 @@ class GpuFollower(QQuickItem):
             old = None
         node = old if old is not None else QSGTransformNode()
         settings = self._settings
+        isolated = settings.get("isolatedRole")
+        grid_only = bool(settings.get("gridOnly"))
         plot = settings.get("plot") or {}
         bed = plot.get("bed") or {}
         scale = settings.get("scale", 1)
@@ -451,6 +505,7 @@ class GpuFollower(QQuickItem):
             QColor(settings.get("gridMajor", "#ffffff")).rgba(),
             sx,
             sy,
+            bool(settings.get("showGrid", True)) and not bool(isolated),
         )
         if getattr(node, "_data", None) is not self._data:
             while node.firstChild():
@@ -484,7 +539,7 @@ class GpuFollower(QQuickItem):
         if node._grid_key != key:
             for child in node._grid_nodes:
                 sip.delete(child)
-            node._grid_nodes = self._grid(node, key)
+            node._grid_nodes = self._grid(node, key) if settings.get("showGrid", True) and not isolated else []
             node._grid_key = key
         split = settings.get("split")
         split = float("inf") if split is None else split
@@ -500,7 +555,7 @@ class GpuFollower(QQuickItem):
         if node._marker_key != marker_key:
             for child in node._marker_nodes:
                 sip.delete(child)
-            edges = marker_geometry(self._data, *marker_key[:7])
+            edges = marker_geometry(self._data, *marker_key[:7]) if not isolated and not grid_only else b""
             node._marker_nodes = []
             if edges:
                 child = self._node(node, QColor.fromRgba(marker_key[-1]))
@@ -514,32 +569,60 @@ class GpuFollower(QQuickItem):
         )
         matrix.scale(sx, -sy)
         node.setMatrix(matrix)
+        scheme = settings.get("colourScheme") or {}
+        mode = int(scheme.get("mode", 1))
+        classes = scheme.get("classes") or COLOURS
+        colours = scheme.get("materials") or ["#888888"]
+        palette = tuple(QColor(colours[i] if i < len(colours) else colours[0]) for i in range(16))
         for role, name, motions, data, base, printed in node._groups:
             enabled = role == "current" or bool(settings.get("showPrevious" if role == "prev" else "showNext"))
-            if name == "TRAVEL":
+            if is_travel(name):
                 enabled = enabled and bool(settings.get("showTravels"))
             count = len(motions) * 6
-            counts = (
-                count if enabled and name != "TRAVEL" and (role != "current" or settings.get("showBase")) else 0,
-                bisect.bisect_left(motions, split) * 6 if enabled and role == "current" else 0,
-            )
+            if settings.get("isolateTranslucent"):
+                enabled = enabled and role == "current"
+            if grid_only:
+                counts = (0, 0)
+            elif isolated:
+                draw = role == ("current" if isolated == "ghost" else isolated) and not is_travel(name)
+                counts = (count if draw else 0, 0)
+            else:
+                counts = (
+                    count if enabled and not is_travel(name) and (role != "current" or settings.get("showBase") and not settings.get("isolateTranslucent")) else 0,
+                    bisect.bisect_left(motions, split) * 6 if enabled and role == "current" else 0,
+                )
             for child, count in zip((base, printed), counts, strict=True):
                 geometry = child.geometry()
                 if geometry.vertexCount() != count:
                     geometry.allocate(count)
                     if count:
-                        ctypes.memmove(int(geometry.vertexData()), data, count * 32)
+                        ctypes.memmove(int(geometry.vertexData()), data, count * 40)
                     geometry.markVertexDataDirty()
                     child.markDirty(QSGNode.DirtyStateBit.DirtyGeometry | QSGNode.DirtyStateBit.DirtyMaterial)
                 material = child._material
+                grey = child is base and role == "current"
+                ink = QColor("#888888" if grey else classes.get(name, "#888888"))
+                if mode != 1 and not grey and not is_travel(name):
+                    ink.setAlphaF(1.)
+                if child is base:
+                    ink.setAlphaF(1.0 if isolated else (.55 if role == "current" else .3))
+                metadata = (settings.get("layerInfo") or {}).get(role) or {}
+                ranges = settings.get("colourRanges") or {}
+                bounds = ranges.get({2:"speed", 3:"height", 4:"width", 5:"flow"}.get(mode), (0., 0.))
+                options = (float(-1 if grey or is_travel(name) else mode), float(bounds[0]), float(bounds[1]), float(metadata.get("height", .2)))
+                if material.colour != ink or material.colour_options != options or material.palette != palette:
+                    material.colour, material.colour_options, material.palette = ink, options, palette
+                    child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)
                 clip = child is printed and role == "current" and math.isfinite(display_split)
                 if material.clip != clip or clip and material.split != display_split:
                     material.clip = clip
                     material.split = display_split if clip else 0.0
                     child.markDirty(QSGNode.DirtyStateBit.DirtyMaterial)
-                material.viewport = (self.window().width(), self.window().height())
-                width = settings.get("lineWidth", 1) * (settings.get("travelRatio", 0.7) if name == "TRAVEL" else 1)
-                physical = bool(settings.get("trueThickness")) and name != "TRAVEL"
+                material.viewport = (self.width(), self.height()) if isolated else (self.window().width(), self.window().height())
+                width = settings.get("lineWidth", 1) * (settings.get("travelRatio", 0.7) if is_travel(name) else 1)
+                if is_travel(name) and settings.get("trueThickness"):
+                    width = 1.0
+                physical = bool(settings.get("trueThickness")) and not is_travel(name)
                 if physical:
                     width = abs(sx)
                 aa = bool(settings.get("antialiasing"))
@@ -552,7 +635,7 @@ class GpuFollower(QQuickItem):
 
     def _grid(self, parent, key):
         """Bed-space graduations share the toolpaths' retained transform."""
-        (xmin, xmax, ymin, ymax), compact, thin, major, sx, sy = key
+        (xmin, xmax, ymin, ymax), compact, thin, major, sx, sy = key[:6]
         if xmax <= xmin or ymax <= ymin:
             return []
         fine, coarse = array("f"), array("f")

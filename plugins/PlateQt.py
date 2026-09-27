@@ -30,6 +30,8 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from itertools import count
 
+from .PreviewColours import motion_colour
+
 from PyQt6.QtCore import QObject, QPointF, QRectF, QRunnable, Qt, QUrl, pyqtProperty, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
 
@@ -163,18 +165,24 @@ def qml_geometry(payload):
     rows = [segment for groups in (payload.get("classes") or {}).values()
             for segment in groups]
     rows.extend(payload.get("travels") or ())
+    rows.extend(segment for groups in (payload.get("travelClasses") or {}).values() for segment in groups)
     marks = tuple(payload.get("travelStarts") or ()) + tuple(payload.get("travelEnds") or ())
     if not any(isinstance(segment, tuple) or
                (segment and isinstance(segment[0], tuple)) for segment in rows) \
-            and not any(isinstance(point, tuple) for point in marks):
+            and not any(isinstance(point, tuple) for point in marks) \
+            and not any(isinstance(payload.get(key), tuple) for key in ("widths", "speeds", "tools")) \
+            and not any(isinstance(bounds, tuple) for bounds in (payload.get("colourRanges") or {}).values()):
         return payload
     def segments(rows):
         return [[list(point) for point in segment] for segment in rows]
     return dict(payload,
                 **({"widths": list(payload["widths"])} if "widths" in payload else {}),
+                **({key: list(payload[key]) for key in ("speeds", "tools") if key in payload}),
+                colourRanges={key:list(bounds) for key,bounds in (payload.get("colourRanges") or {}).items()},
                 classes={name: segments(rows) for name, rows in
                          (payload.get("classes") or {}).items()},
                 travels=segments(payload.get("travels") or ()),
+                **({"travelClasses": {name:segments(rows) for name,rows in payload["travelClasses"].items()}} if "travelClasses" in payload else {}),
                 travelStarts=[list(point) for point in payload.get("travelStarts") or ()],
                 travelEnds=[list(point) for point in payload.get("travelEnds") or ()])
 
@@ -233,6 +241,10 @@ class PlateLayer(QObject):
     def extruderEvents(self):
         return [list(point) + [retract] for key, retract in (("retractions", True), ("unretractions", False))
                 for point in self._payload.get(key) or ()]
+
+    @pyqtProperty("QVariantMap", constant=True)
+    def colourInfo(self):
+        return {"height": self._payload.get("layerHeight", .2), "ranges": {key:list(bounds) for key,bounds in (self._payload.get("colourRanges") or {}).items()}}
 
     @pyqtProperty(int, constant=True)
     def motions(self) -> int:
@@ -518,6 +530,7 @@ def scene_context(plot: dict, view: dict) -> str:
         except (TypeError, ValueError):
             return default
     return repr((
+        repr(view.get("colourScheme") or {}),
         tuple(number(view.get(key), 0.0) for key in _CONTEXT_VIEW),
         tuple(bool(view.get(key, fallback))
               for key, fallback in _CONTEXT_FLAGS),
@@ -553,7 +566,7 @@ def _transform(plot: dict, view: dict):
             float(plot["bedXMin"]), float(plot["bedYMax"]))
 
 
-def _paint_physical(painter, pen, points, payload, sx, sy, ox, oy, xmin, ymax, first=0, split=-1, cancel=None):
+def _paint_physical(painter, pen, points, payload, sx, sy, ox, oy, xmin, ymax, first=0, split=-1, cancel=None, name=None, view=None):
     widths = payload.get("widths") or ()
     for edge, (a, b) in enumerate(zip(points, points[1:], strict=False)):
         if edge % 512 == 0 and cancel is not None and cancel.is_set():
@@ -564,7 +577,10 @@ def _paint_physical(painter, pen, points, payload, sx, sy, ox, oy, xmin, ymax, f
         if split >= 0 and motion >= split:
             break
         mm = widths[motion] if motion < len(widths) else 0.0
-        pen.setWidthF((mm if mm > 0 else 0.4) * abs(sx))
+        if view is None or view.get("trueThickness"):
+            pen.setWidthF((mm if mm > 0 else 0.4) * abs(sx))
+        if name is not None:
+            pen.setColor(QColor(motion_colour(payload, name, motion, (view or {}).get("colourScheme") or {})))
         painter.setPen(pen)
         path = QPainterPath()
         path.moveTo(ox + (a[0] - xmin) * sx, oy + (ymax - a[1]) * sy)
@@ -586,15 +602,15 @@ def _paint_segments(painter: QPainter, pen: QPen, payload: dict, plot: dict, vie
     for name, segments in (payload.get("classes") or {}).items():
         if class_names is not None and name not in class_names:
             continue
-        pen.setColor(QColor(colour if colour else _PLATE_CLASS_COLOURS.get(name, "#888888")))
+        pen.setColor(QColor(colour if colour else (view.get("colourScheme", {}).get("classes") or _PLATE_CLASS_COLOURS).get(name, "#888888")))
         painter.setPen(pen)
         for points in segments:
             if cancel is not None and cancel.is_set():
                 return False
             if len(points) < 2:
                 continue
-            if view.get("trueThickness"):
-                _paint_physical(painter, pen, points, payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, cancel=cancel)
+            if view.get("trueThickness") or (not colour and view.get("colourScheme", {}).get("mode", 1) != 1):
+                _paint_physical(painter, pen, points, payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, cancel=cancel, name=None if colour else name, view=view)
                 continue
             path = QPainterPath()
             path.moveTo(offset_x + (points[0][0] - bed_x_min) * sx,
@@ -774,7 +790,7 @@ def _paint_below_split(painter: QPainter, pen: QPen, payload: dict, plot: dict,
     for name, segments in (payload.get("classes") or {}).items():
         if cancel is not None and cancel.is_set():
             return
-        pen.setColor(QColor(_PLATE_CLASS_COLOURS.get(name, "#888888")))
+        pen.setColor(QColor((view.get("colourScheme", {}).get("classes") or _PLATE_CLASS_COLOURS).get(name, "#888888")))
         painter.setPen(pen)
         for points in segments:
             if cancel is not None and cancel.is_set():
@@ -793,8 +809,8 @@ def _paint_below_split(painter: QPainter, pen: QPen, payload: dict, plot: dict,
                 # lower bound holds. No further back-up — earlier
                 # edges carry motions below `first`.
                 begin -= 1
-            if view.get("trueThickness"):
-                _paint_physical(painter, pen, points[begin:], payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, first=first, split=split, cancel=cancel)
+            if view.get("trueThickness") or view.get("colourScheme", {}).get("mode", 1) != 1:
+                _paint_physical(painter, pen, points[begin:], payload, sx, sy, offset_x, offset_y, bed_x_min, bed_y_max, first=first, split=split, cancel=cancel, name=name, view=view)
                 continue
             path = QPainterPath()
             drew = False
@@ -824,15 +840,15 @@ def _travels_pen(pen: QPen, view: dict) -> QPen:
     the nav composite and the exact scene's travel raster can never
     disagree on the stroke."""
     tpen = QPen(pen)
-    if view.get("trueThickness") and view.get("lineWidthPx"):
-        width = float(view["lineWidthPx"]) * _backing_scale(view)
+    if view.get("trueThickness"):
+        width = 1.0 * _backing_scale(view)
         if view.get("backing"):
             width /= max(1.0, float(view.get("zoom") or 1.0))
         tpen.setWidthF(width)
-    tpen.setWidthF(max(0.01, tpen.widthF()
-                       * float(view.get("travelVisualRatio",
-                                        _PLATE_TRAVEL_VISUAL_RATIO))))
-    tpen.setColor(QColor(_PLATE_TRAVEL_COLOUR))
+    else:
+        tpen.setWidthF(max(0.01, tpen.widthF()
+                          * float(view.get("travelVisualRatio", _PLATE_TRAVEL_VISUAL_RATIO))))
+    tpen.setColor(QColor((view.get("colourScheme", {}).get("classes") or {}).get("TRAVEL", _PLATE_TRAVEL_COLOUR)))
     return tpen
 
 
@@ -844,6 +860,16 @@ def _paint_travels(painter: QPainter, pen: QPen, payload: dict, plot: dict,
     an uncancelled `split=None` run paints the whole channel and a
     delta run adds only the travels since the previous composite.
     Returns False when a cooperative cancel stopped the walk."""
+    groups = payload.get("travelClasses")
+    if groups is not None:
+        for name, segments in groups.items():
+            scheme = dict(view.get("colourScheme") or {})
+            colours = dict(scheme.get("classes") or {})
+            colours["TRAVEL"] = colours.get(name, _PLATE_TRAVEL_COLOUR)
+            scheme["classes"] = colours
+            if not _paint_travels(painter, pen, {"travels": segments}, plot, dict(view, colourScheme=scheme), split, cancel, first):
+                return False
+        return True
     travels = payload.get("travels")
     if not travels:
         return True

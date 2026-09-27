@@ -4,6 +4,7 @@ import QtQuick.Window 2.15
 import UM 1.5 as UM
 import Cura 1.1 as Cura
 import "theme"
+import "PreviewColours.js" as PreviewColours
 import "PlateExactComposition.js" as ExactComposition
 
 // The plate map's progress face (4.6.0): the OctoApp-style
@@ -120,6 +121,17 @@ Item {
     // diagonals the reference renderers show).
     property bool pixelLineWidth: false
     property bool trueThickness: false
+    property var colourScheme: printerModel != null && printerModel.followerColourScheme !== undefined ? printerModel.followerColourScheme : ({
+            mode: 1
+        })
+    property string colourKey: JSON.stringify(colourScheme)
+    property var colourRanges: progress != null && progress.layers != null && progress.layers.current != null && progress.layers.current.colourInfo !== undefined ? progress.layers.current.colourInfo.ranges : ({})
+    function layerColourInfo(role) {
+        var layer = progress != null && progress.layers != null ? progress.layers[role] : null;
+        return layer != null && layer.colourInfo !== undefined ? layer.colourInfo : ({
+                height: 0.2
+            });
+    }
     property real lineScale: 0.7
     // The toolpath ink's PHYSICAL width: strokes are bed-space
     // geometry, never screen pixels. The nominal is the slicer's
@@ -442,7 +454,14 @@ Item {
     }
 
     function classColour(name) {
+        if (colourScheme.classes != null && colourScheme.classes[name] !== undefined)
+            return colourScheme.classes[name];
         switch (name) {
+        case "TRAVEL":
+        case "TRAVEL_RETRACTING":
+        case "TRAVEL_RETRACTED":
+        case "TRAVEL_PRIMING":
+            return MoonrakerTheme.plateTravel;
         case "WALL-OUTER":
             return MoonrakerTheme.plateClassWallOuter;
         case "WALL-INNER":
@@ -1212,6 +1231,8 @@ Item {
     }
 
     function travelWidthPx() {
+        if (root.trueThickness)
+            return 1.0;
         return root.toolpathWidthPx() * root.travelVisualRatio;
     }
 
@@ -1327,7 +1348,7 @@ Item {
     function _viewKey() {
         var plot = mapping._plot;
         var bed = plot != null ? plot.bed : null;
-        return [root.viewScale, root.viewPanX, root.viewPanY, root.lineScale, root.trueThickness ? 1 : 0, root.compact ? 1 : 0, width, height, root.devicePixelRatio, root.toolpathWidthPx(), bed != null ? [bed.offsetX, bed.offsetY, bed.bedXMin, bed.bedYMax, plot.sx, plot.sy].join(":") : ""].join("|");
+        return [root.viewScale, root.viewPanX, root.viewPanY, root.lineScale, root.trueThickness ? 1 : 0, JSON.stringify(root.colourScheme), root.compact ? 1 : 0, width, height, root.devicePixelRatio, root.toolpathWidthPx(), bed != null ? [bed.offsetX, bed.offsetY, bed.bedXMin, bed.bedYMax, plot.sx, plot.sy].join(":") : ""].join("|");
     }
 
     function _motionsOf(layer) {
@@ -1606,6 +1627,11 @@ Item {
             _requestProgressPaint();
         }
     }
+    onColourKeyChanged: {
+        _publishView();
+        _retireRetainedView();
+        root.settleTimer.restart();
+    }
     onTrueThicknessChanged: {
         _publishView();
         _retireRetainedView();
@@ -1715,6 +1741,49 @@ Item {
         viewPanY: root.viewPanY
     }
 
+    // Share immutable worker buffers. Only translucent layers use textures;
+    // the printed prefix, travels, grid and glyphs remain direct GPU draws.
+    function translucentSettings(role) {
+        var settings = {};
+        var source = gpuFollower.settings;
+        for (var key in source)
+            settings[key] = source[key];
+        settings.isolatedRole = role;
+        settings.showGrid = false;
+        settings.split = null;
+        settings.displaySplit = null;
+        settings.markerSplit = null;
+        settings.showRetractions = false;
+        settings.showUnretractions = false;
+        return settings;
+    }
+
+    GpuFollowerItem {
+        anchors.fill: parent
+        z: 0.2
+        visible: gpuFollower.visible
+        dataSource: gpuFollower
+        settings: {
+            var settings = root.translucentSettings("");
+            settings.gridOnly = true;
+            settings.showGrid = true;
+            return settings;
+        }
+    }
+    Repeater {
+        model: ["prev", "next", "ghost"]
+        delegate: GpuFollowerItem {
+            anchors.fill: parent
+            z: 0.3 + index * 0.01
+            dataSource: gpuFollower
+            visible: gpuFollower.visible && (modelData === "ghost" ? root.showBase : (modelData === "prev" ? root.showPrevious : root.showNext))
+            opacity: modelData === "ghost" ? 0.55 : 0.3
+            layer.enabled: visible
+            layer.smooth: false
+            settings: root.translucentSettings(modelData)
+        }
+    }
+
     GpuFollowerItem {
         id: gpuFollower
         onReadyChanged: root._updateDot(false)
@@ -1737,8 +1806,17 @@ Item {
                 gridMajor: UM.Theme.getColor("border"),
                 lineWidth: root.toolpathWidthPx(),
                 trueThickness: root.trueThickness,
+                colourScheme: root.colourScheme,
+                colourRanges: root.colourRanges,
+                layerInfo: ({
+                        current: root.layerColourInfo("current"),
+                        prev: root.layerColourInfo("prev"),
+                        next: root.layerColourInfo("next")
+                    }),
                 antialiasing: root.smoothToolpaths,
                 showBase: root.showBase,
+                isolateTranslucent: true,
+                showGrid: false,
                 showPrevious: root.showPrevious,
                 showNext: root.showNext,
                 showTravels: root.showTravels,
@@ -2308,7 +2386,7 @@ Item {
                         root._travelsSourceReady = sourceReady;
                         var travelFrom = (resetPainted || travelsChanged) ? -1 : root._lastSplit;
                         bitmapChanged = bitmapChanged || resetPainted || travelsChanged || split !== root._lastSplit;
-                        _drawTravels(ctx, current.travels, split, travelFrom);
+                        _drawTravelClasses(ctx, current, split, travelFrom);
                     }
                     root._lastSplit = split;
                     root._paintsSinceReset += 1;
@@ -2519,7 +2597,7 @@ Item {
         var widthScale = backing / (root.viewScale > 0 ? root.viewScale : 1.0);
         _drawLayer(ctx, current, 1.0, split, false, navSplit, scale, widthScale);
         if (root.showTravels) {
-            _drawTravels(ctx, current.travels, split, navSplit, scale, widthScale);
+            _drawTravelClasses(ctx, current, split, navSplit, scale, widthScale);
         }
     }
 
@@ -2575,13 +2653,16 @@ Item {
                     continue;
                 }
                 var i = _firstEdge(points, from);
-                if (root.trueThickness) {
+                if (root.trueThickness || (!base && root.colourScheme.mode !== 1)) {
                     var widths = layer.widths || [];
                     while (_edgePrinted(points, i, split)) {
                         ctx.stroke();
                         ctx.beginPath();
                         var mm = widths[Math.floor(points[i][2])];
-                        ctx.lineWidth = (mm > 0 ? mm : 0.4) * Math.abs(sx * scale);
+                        if (root.trueThickness)
+                            ctx.lineWidth = (mm > 0 ? mm : 0.4) * Math.abs(sx * scale);
+                        if (!base)
+                            ctx.strokeStyle = PreviewColours.colour(layer, name, Math.floor(points[i][2]), root.colourScheme);
                         ctx.moveTo((offsetX + (points[i - 1][0] - bedXMin) * sx) * scale + panX, (offsetY + (bedYMax - points[i - 1][1]) * sy) * scale + panY);
                         ctx.lineTo((offsetX + (points[i][0] - bedXMin) * sx) * scale + panX, (offsetY + (bedYMax - points[i][1]) * sy) * scale + panY);
                         ctx.stroke();
@@ -2608,7 +2689,16 @@ Item {
         }
     }
 
-    function _drawTravels(ctx, segments, split, from, scaleOverride, widthScale) {
+    function _drawTravelClasses(ctx, layer, split, from, scaleOverride, widthScale) {
+        if (layer.travelClasses !== undefined) {
+            for (var name in layer.travelClasses)
+                _drawTravels(ctx, layer.travelClasses[name], split, from, scaleOverride, widthScale, name);
+        } else {
+            _drawTravels(ctx, layer.travels, split, from, scaleOverride, widthScale, "TRAVEL");
+        }
+    }
+
+    function _drawTravels(ctx, segments, split, from, scaleOverride, widthScale, name) {
         if (segments == null) {
             return;
         }
@@ -2616,7 +2706,7 @@ Item {
         var scale = backed ? scaleOverride : root._view.scale;
         var panX = backed ? 0.0 : root._view.panX;
         var panY = backed ? 0.0 : root._view.panY;
-        ctx.strokeStyle = MoonrakerTheme.plateTravel;
+        ctx.strokeStyle = root.classColour(name || "TRAVEL");
         ctx.globalAlpha = 0.8;
         ctx.lineWidth = root.travelWidthPx() * (widthScale !== undefined && widthScale > 0 ? widthScale : 1.0);
         ctx.lineJoin = "round";

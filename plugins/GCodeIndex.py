@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .TravelStates import advance
+
 import gzip
 import hashlib
 import json
@@ -33,6 +35,7 @@ def _log(message, *args):
         _Logger.log("i", message, *args)
 
 from . import ArcGeometry
+from .PreviewColours import valid_ranges
 from .MoonrakerProtocol import RemoteFileIdentity
 
 
@@ -48,10 +51,10 @@ _STATS_MARKER = re.compile(
 _MOTION = re.compile(rb"^\s*(?:N\d+\s*)?G0?[0-3](?!\d)", re.IGNORECASE)
 _ELAPSED = re.compile(rb"^\s*;TIME_ELAPSED:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", re.IGNORECASE)
 _COMMAND = re.compile(rb"^\s*(?:N\d+\s*)?([GMT]\d+)(?!\d)", re.IGNORECASE)
-# Only the XYZE words are read here: an arc's centre offsets are not
+# XYZE and modal feedrate F are read here: an arc's centre offsets are not
 # positions and never move the XYZ state, so they are parsed separately
 # (_ARC_WORD) and only on a G2/G3 line.
-_AXIS = re.compile(rb"([XYZE])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", re.IGNORECASE)
+_AXIS = re.compile(rb"([XYZEF])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", re.IGNORECASE)
 # An arc's I/J/K centre offsets, and the R a radius-form arc would carry
 # (Klipper rejects that form; the R is what tells the two apart).
 _ARC_WORD = re.compile(rb"([IJKR])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", re.IGNORECASE)
@@ -162,7 +165,7 @@ _MAX_CACHE_ARC_ENTRIES = 200_000
 # build walk, not the hydrated arrays) — every older cache's
 # counts may read zero for never-hydrated layers, which is exactly
 # the resumed-session dead-slider report; refusing them rebuilds.
-_CACHE_VERSION = 12
+_CACHE_VERSION = 14
 _LARGE_FILE_COMPACT_THRESHOLD = 128 * 1024 * 1024
 # Hardening bounds for hostile/corrupt gcode (panel security P2-4): a
 # real gcode line is well under 1 KB, real prints stay under ~100k
@@ -331,8 +334,16 @@ class LayerMotionIndex:
     motion_extrusion: List[array] = field(default_factory=list)
     layer_heights: List[float] = field(default_factory=list)
     filament_diameter: float = 1.75
+    filament_diameters: dict = field(default_factory=dict)
+    motion_speeds: List[array] = field(default_factory=list)
+    motion_tools: List[array] = field(default_factory=list)
+    layer_start_speeds: List[float] = field(default_factory=list)
+    layer_start_tools: List[int] = field(default_factory=list)
+    colour_ranges: dict = field(default_factory=dict)
     extruder_events: List[List[Tuple[int, bool]]] = field(default_factory=list)
     layer_start_retracted: List[bool] = field(default_factory=list)
+    layer_start_retractions: List[dict] = field(default_factory=list)
+    firmware_retractions: List[list] = field(default_factory=list)
     layer_start_positions: List[Tuple[float, float, float]] = field(default_factory=list)
     layer_start_absolute: List[bool] = field(default_factory=list)
     layer_start_units: List[float] = field(default_factory=list)
@@ -706,8 +717,8 @@ def _parse_axes(code: bytes) -> Dict[str, float]:
 # whose letter sits against its number. Any other shape returns None
 # and the caller keeps the regex path (the parity contract: the fast
 # path never reinterprets a line, it only claims the safe subset).
-_AXIS_LETTERS = (88, 89, 90, 69)   # X Y Z E
-_AXIS_LOWER = (120, 121, 122, 101)  # x y z e
+_AXIS_LETTERS = (88, 89, 90, 69, 70)   # X Y Z E F
+_AXIS_LOWER = (120, 121, 122, 101, 102)  # x y z e f
 _FAST_MOTIONS = (b"G0", b"G1", b"G2", b"G3")
 
 
@@ -792,7 +803,8 @@ class _FeatureTracker:
     __slots__ = ("runs", "starts", "ends", "count", "last_type", "span",
                  "open_type", "e", "absolute_e", "extruding", "start_type",
                  "start_e", "start_e_absolute", "start_extruding", "plane",
-                 "start_plane", "events", "retracted", "start_retracted", "extrusions")
+                 "start_plane", "events", "retracted", "start_retracted", "extrusions",
+                 "speed", "tool", "start_speed", "start_tool", "speeds", "tools", "metric_limits", "retractions", "start_retractions", "firmware_events")
 
     def __init__(self) -> None:
         self.runs: List[List[int]] = []
@@ -820,6 +832,12 @@ class _FeatureTracker:
         self.events = []
         self.extrusions = array("f")
         self.retracted = self.start_retracted = False
+        self.retractions, self.start_retractions = {}, {}
+        self.firmware_events = []
+        self.speed = self.start_speed = 0.0
+        self.tool = self.start_tool = 0
+        self.speeds, self.tools = array("f"), array("H")
+        self.metric_limits = {}
 
     def open_layer(self) -> None:
         """Seed a new layer from the modal state and reset the counters."""
@@ -830,6 +848,11 @@ class _FeatureTracker:
         self.start_extruding = self.extruding
         self.start_plane = self.plane
         self.start_retracted = self.retracted
+        self.start_retractions = dict(self.retractions)
+        self.firmware_events = []
+        self.start_speed, self.start_tool = self.speed, self.tool
+        self.speeds, self.tools = array("f"), array("H")
+        self.metric_limits = {}
         self.events = []
         self.extrusions = array("f")
         self.runs = []
@@ -880,12 +903,16 @@ class _FeatureTracker:
             runs[-1][1] = _TYPE_OTHER
             runs[-1][0] += span
 
-    def extruder_event(self, retract, collect):
+    def extruder_event(self, retract, collect, *, firmware=True):
         if collect and len(self.events) < _MAX_MOTIONS_PER_LAYER and (not self.events or self.events[-1] != (self.count, retract)):
             self.events.append((self.count, retract))
         self.retracted = retract
+        if firmware:
+            if collect and len(self.firmware_events) < _MAX_MOTIONS_PER_LAYER:
+                self.firmware_events.append((self.count, self.tool, retract))
+            self.retractions[self.tool] = -1.0 if retract else 0.0
 
-    def add(self, axes: Dict[str, float], collect: bool) -> None:
+    def add(self, axes: Dict[str, float], collect: bool, length=0.0) -> None:
         """Advance one motion's E and feature state.
 
         *collect* is False when the motion is not being recorded in the
@@ -893,6 +920,8 @@ class _FeatureTracker:
         The modal state advances either way, because the next layer's seed
         is read from it; only the appends stand down.
         """
+        if "F" in axes and math.isfinite(axes["F"]) and 0 < axes["F"] <= 60e6:
+            self.speed = axes["F"] / 60.0
         delta = 0.0
         if "E" in axes:
             value = axes["E"] if self.absolute_e else self.e + axes["E"]
@@ -900,10 +929,21 @@ class _FeatureTracker:
             self.e = value
         if collect:
             self.extrusions.append(delta if math.isfinite(delta) and abs(delta) < 1e6 else 0.0)
+            self.speeds.append(self.speed)
+            self.tools.append(self.tool)
+        if math.isfinite(delta) and delta > 0 and length > 1e-9:
+            ratio = delta / length
+            if math.isfinite(ratio) and 0 < ratio <= 1e6:
+                limits = self.metric_limits.setdefault(self.tool, [math.inf, -math.inf] * 3)
+                for i, value in enumerate((self.speed, ratio, ratio * self.speed)):
+                    limits[i * 2] = min(limits[i * 2], value)
+                    limits[i * 2 + 1] = max(limits[i * 2 + 1], value)
+        advance(self.retractions, self.tool, delta if math.isfinite(delta) else 0.0)
         if delta < -1e-9:
-            self.extruder_event(True, collect)
+            self.extruder_event(True, collect, firmware=False)
         elif delta > 1e-9 and self.retracted:
-            self.extruder_event(False, collect)
+            self.extruder_event(False, collect, firmware=False)
+        self.retracted = self.retractions.get(self.tool, 0.0) != 0
         rolling = delta > 0.0
         if rolling != self.extruding:
             if collect:
@@ -922,6 +962,25 @@ def _emit_progress(handle: BinaryIO, progress) -> None:
         progress(min(1.0, handle.tell() / max(1, size)))
     except (OSError, ValueError):
         pass
+
+def _print_colour_ranges(blocks, heights, diameter, diameters):
+    result = {}
+    for block, height in zip(blocks, heights, strict=True):
+        for tool, limits in (block.get("metric_limits") or {}).items():
+            if len(limits) != 6 or not math.isfinite(limits[0]):
+                continue
+            d = diameters.get(tool, diameter)
+            area = math.pi * d * d / 4
+            values = {"speed": limits[:2], "height": (height, height),
+                      "width": tuple(v * area / height for v in limits[2:4]),
+                      "flow": tuple(v * area for v in limits[4:6])}
+            for name, (lo, hi) in values.items():
+                if not (math.isfinite(lo) and math.isfinite(hi) and 0 <= lo <= hi <= 1e9):
+                    continue
+                previous = result.get(name, (lo, hi))
+                result[name] = (min(lo, previous[0]), max(hi, previous[1]))
+    return result
+
 
 def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] = None, progress=None, stage=None) -> LayerMotionIndex:
     # ONE pass (the ruling): a single read collects the
@@ -961,7 +1020,13 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
     except OSError:
         sniffed = None
     filament_diameter = 1.75
+    filament_diameters = {}
     for line in head_lines if "head_lines" in locals() else ():
+        tool_diameter = re.match(rb";EXTRUDER_TRAIN\.(\d+)\.MATERIAL\.DIAMETER:\s*([0-9.]+)", line, re.IGNORECASE)
+        if tool_diameter:
+            tool, value = int(tool_diameter.group(1)), float(tool_diameter.group(2))
+            if 0 <= tool < 16 and .1 <= value <= 10:
+                filament_diameters[tool] = value
         if b"filament_diameter" in line.lower() or line.upper().startswith(b";MATERIAL.DIAMETER:"):
             match = re.search(rb"[:=]\s*([0-9.]+)", line)
             if match:
@@ -1089,11 +1154,17 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 finished = features.payload()
                 finished_events = features.events
                 finished_extrusions = features.extrusions
+                finished_speeds, finished_tools = features.speeds, features.tools
+                finished_firmware = features.firmware_events
+                finished_limits = features.metric_limits
                 features.open_layer()
                 if current is not None:
                     current["features"] = finished
                     current["events"] = finished_events
                     current["extrusions"] = finished_extrusions
+                    current["speeds"], current["tools"] = finished_speeds, finished_tools
+                    current["metric_limits"] = finished_limits
+                    current["firmware_retractions"] = finished_firmware
                 if len(blocks) >= _MAX_LAYER_BLOCKS:
                     # Marker-dense hostile file: stop tracking further
                     # layers. The last tracked block already closed at
@@ -1125,6 +1196,8 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                         "extrusions": array("f"),
                         "print_z": None,
                         "start_retracted": features.start_retracted,
+                        "start_retractions": features.start_retractions,
+                        "start_speed": features.start_speed, "start_tool": features.start_tool,
                     }
                     blocks.append(current)
                 if matched is not None:
@@ -1146,6 +1219,9 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                     current["features"] = features.payload()
                     current["events"] = features.events
                     current["extrusions"] = features.extrusions
+                    current["speeds"], current["tools"] = features.speeds, features.tools
+                    current["firmware_retractions"] = features.firmware_events
+                    current["metric_limits"] = features.metric_limits
                     current["motion_total"] = features.count
                     try:
                         current["elapsed"] = float(elapsed_match.group(1))
@@ -1208,6 +1284,10 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 collect_event = collect_motions and current is not None and current["end"] is None and features.count < _MAX_MOTIONS_PER_LAYER
                 if command == b"G10" or features.retracted:
                     features.extruder_event(command == b"G10", collect_event)
+            elif command.startswith(b"T"):
+                tool = int(command[1:])
+                features.tool = tool if 0 <= tool < 16 else 0
+                features.retracted = features.retractions.get(features.tool, 0.0) != 0
             elif command == b"G92":
                 if "X" in axes:
                     x = axes["X"]
@@ -1229,6 +1309,7 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 # printed-object walk all read the real curve instead of
                 # the chord between its ends. The endpoint below is still
                 # the truth the NEXT move's edge starts from.
+                motion_start = (x, y, z)
                 nx, ny, nz = x, y, z
                 if "X" in axes:
                     nx = axes["X"] if absolute_xyz else x + axes["X"]
@@ -1254,7 +1335,8 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
                 # both stop the arrays without stopping the E state, and
                 # the next layer resumes from that state.
                 previous_e = features.e
-                features.add(axes, collect_here)
+                length = ArcGeometry.path_length(arc, motion_start, (x, y, z), xy=True) if arc else math.hypot(x - motion_start[0], y - motion_start[1])
+                features.add(axes, collect_here, length)
                 if current is not None and current["end"] is None and current["print_z"] is None and moved_xy and features.e > previous_e:
                     current["print_z"] = z
                 if collect_here:
@@ -1277,6 +1359,9 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
             current["features"] = features.payload()
             current["events"] = features.events
             current["extrusions"] = features.extrusions
+            current["speeds"], current["tools"] = features.speeds, features.tools
+            current["firmware_retractions"] = features.firmware_events
+            current["metric_limits"] = features.metric_limits
             current["motion_total"] = features.count
 
     ranges: List[Tuple[int, int]] = []
@@ -1288,10 +1373,13 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
     travel_starts: List[List[int]] = []
     travel_ends: List[List[int]] = []
     extrusion_columns = []
+    speed_columns, tool_columns, start_speeds, start_tools = [], [], [], []
     layer_heights = []
     last_print_z = 0.0
     extruder_events = []
     start_retracted = []
+    start_retractions = []
+    firmware_retractions = []
     starts: List[Tuple[float, float, float]] = []
     start_absolute: List[bool] = []
     start_units: List[float] = []
@@ -1323,6 +1411,10 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
         travel_starts.append(block_features[1])
         travel_ends.append(block_features[2])
         extrusion_columns.append(block.get("extrusions", array("f")))
+        speed_columns.append(block.get("speeds", array("f")))
+        tool_columns.append(block.get("tools", array("H")))
+        start_speeds.append(block.get("start_speed", 0.0))
+        start_tools.append(block.get("start_tool", 0))
         print_z = block.get("print_z")
         height = print_z - last_print_z if print_z is not None else 0.0
         layer_heights.append(height if 0.001 <= height <= 10 else 0.2)
@@ -1330,6 +1422,8 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
             last_print_z = print_z
         extruder_events.append(block.get("events", []))
         start_retracted.append(block.get("start_retracted", False))
+        start_retractions.append(block.get("start_retractions", {}))
+        firmware_retractions.append(block.get("firmware_retractions", []))
         arcs.append(block["arcs"])
         start_arc_plane.append(int(block["start_arc_plane"]))
         starts.append(tuple(float(v) for v in block["start_position"]))
@@ -1425,9 +1519,14 @@ def build_index_from_file(path: str, cancel_event=None, compact: Optional[bool] 
         travel_ends=travel_ends,
         motion_extrusion=extrusion_columns,
         layer_heights=layer_heights,
-        filament_diameter=filament_diameter,
+        filament_diameter=filament_diameter, filament_diameters=filament_diameters,
+        motion_speeds=speed_columns, motion_tools=tool_columns,
+        layer_start_speeds=start_speeds, layer_start_tools=start_tools,
+        colour_ranges=_print_colour_ranges(blocks, layer_heights, filament_diameter, filament_diameters),
         extruder_events=extruder_events,
         layer_start_retracted=start_retracted,
+        layer_start_retractions=start_retractions,
+        firmware_retractions=firmware_retractions,
         layer_start_positions=starts,
         layer_start_absolute=start_absolute,
         layer_start_units=start_units,
@@ -1493,6 +1592,9 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
             features.absolute_e = index.layer_start_e_absolute[layer] if layer < len(index.layer_start_e_absolute) else True
             features.extruding = index.layer_start_extruding[layer] if layer < len(index.layer_start_extruding) else True
             features.retracted = index.layer_start_retracted[layer] if layer < len(index.layer_start_retracted) else False
+            features.speed = index.layer_start_speeds[layer] if layer < len(index.layer_start_speeds) else 0.0
+            features.tool = index.layer_start_tools[layer] if layer < len(index.layer_start_tools) else 0
+            features.retractions = dict(index.layer_start_retractions[layer]) if layer < len(index.layer_start_retractions) else {}
             # The plane at this layer's first motion, never a default XY:
             # a G18 issued before the layer decides what its arcs mean.
             features.plane = index.layer_start_arc_plane[layer] \
@@ -1572,6 +1674,10 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
                 elif command in (b"G10", b"G11"):
                     if command == b"G10" or features.retracted:
                         features.extruder_event(command == b"G10", len(offsets) < _MAX_MOTIONS_PER_LAYER)
+                elif command.startswith(b"T"):
+                    tool = int(command[1:])
+                    features.tool = tool if 0 <= tool < 16 else 0
+                    features.retracted = features.retractions.get(features.tool, 0.0) != 0
                 elif command == b"G92":
                     x = axes.get("X", x); y = axes.get("Y", y); z = axes.get("Z", z)
                     if "E" in axes: features.e = axes["E"]
@@ -1606,9 +1712,16 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
             while len(index.extruder_events) < len(index.ranges):
                 index.extruder_events.append([])
             index.extruder_events[layer] = features.events
+            while len(index.firmware_retractions) < len(index.ranges):
+                index.firmware_retractions.append([])
+            index.firmware_retractions[layer] = features.firmware_events
             while len(index.motion_extrusion) < len(index.ranges):
                 index.motion_extrusion.append(array("f"))
             index.motion_extrusion[layer] = features.extrusions
+            while len(index.motion_speeds) < len(index.ranges):
+                index.motion_speeds.append(array("f"))
+                index.motion_tools.append(array("H"))
+            index.motion_speeds[layer], index.motion_tools[layer] = features.speeds, features.tools
             index.motion_offsets[layer] = offsets
             index.layer_motion_counts[layer] = len(offsets)
             index.motion_x[layer] = xs
@@ -1661,8 +1774,13 @@ def hydrate_layer_from_file(index: LayerMotionIndex, path: str, layer: int,
                     index.travel_ends[old] = []
                     if old < len(index.extruder_events):
                         index.extruder_events[old] = []
+                    if old < len(index.firmware_retractions):
+                        index.firmware_retractions[old] = []
                     if old < len(index.motion_extrusion):
                         index.motion_extrusion[old] = array("f")
+                    if old < len(index.motion_speeds):
+                        index.motion_speeds[old] = array("f")
+                        index.motion_tools[old] = array("H")
                     index.hydrated_layers.remove(old)
         return True
     except OSError:
@@ -2014,6 +2132,13 @@ class PersistentIndexCache:
                     return None
                 extruder_events = [[tuple(row) for row in rows] for rows in event_header["extruder_events"]]
                 start_retracted = event_header["start_retracted"]
+                retraction_seeds = header.get("start_retractions", [])
+                if not isinstance(retraction_seeds, list) or (retraction_seeds and len(retraction_seeds) != len(counts)) or not all(isinstance(row, dict) and all(str(k).isdigit() and 0 <= int(k) < 16 and isinstance(v, (int, float)) and math.isfinite(v) and (v == -1 or 0 <= v <= 1e6) for k,v in row.items()) for row in retraction_seeds):
+                    return None
+                start_retractions = [{int(k):v for k,v in row.items()} for row in retraction_seeds]
+                firmware_retractions = header.get("firmware_retractions", [])
+                if not isinstance(firmware_retractions, list) or (firmware_retractions and len(firmware_retractions) != len(counts)) or not all(isinstance(rows, list) and len(rows) <= _MAX_MOTIONS_PER_LAYER and all(isinstance(row, list) and len(row) == 3 and isinstance(row[0], int) and 0 <= row[0] <= counts[i] and isinstance(row[1], int) and 0 <= row[1] < 16 and isinstance(row[2], bool) for row in rows) and all(a[0] <= b[0] for a,b in zip(rows, rows[1:], strict=False)) for i,rows in enumerate(firmware_retractions)):
+                    return None
                 types = feature_header.get("type_runs", untyped_runs)
                 travel_starts = feature_header.get("travel_starts", empty_markers)
                 travel_ends = feature_header.get("travel_ends", empty_markers)
@@ -2052,6 +2177,17 @@ class PersistentIndexCache:
                     return None
                 if not isinstance(diameter, (int, float)) or not math.isfinite(diameter) or not 0.1 <= diameter <= 10:
                     return None
+                diameters = header.get("filament_diameters", {})
+                if not isinstance(diameters, dict) or not all(str(k).isdigit() and 0 <= int(k) < 16 and isinstance(v, (int, float)) and math.isfinite(v) and .1 <= v <= 10 for k,v in diameters.items()):
+                    return None
+                if not valid_ranges(header.get("colour_ranges", {})):
+                    return None
+                for key, upper, integer in (("start_speeds", 1e6, False), ("start_tools", 15, True)):
+                    values = header.get(key, [])
+                    if not isinstance(values, list) or (values and len(values) != len(counts)) or not all(isinstance(v, int if integer else (int, float)) and math.isfinite(v) and 0 <= v <= upper for v in values):
+                        return None
+                if not isinstance(header.get("motion_attributes", False), bool):
+                    return None
                 if not isinstance(header.get("extrusion_column", False), bool):
                     return None
                 offsets: List[array] = []
@@ -2059,6 +2195,7 @@ class PersistentIndexCache:
                 ys: List[array] = []
                 zs: List[array] = []
                 extrusion_columns = []
+                speed_columns, tool_columns = [], []
                 for count in counts:
                     if count < 0 or count > 100_000_000:
                         return None
@@ -2078,6 +2215,14 @@ class PersistentIndexCache:
                         if not all(math.isfinite(v) for v in ee):
                             return None
                     extrusion_columns.append(ee)
+                    speed, tool = array("f"), array("H")
+                    if header.get("motion_attributes"):
+                        speed.frombytes(_read_exact(handle, count * 4))
+                        tool.frombytes(_read_exact(handle, count * 2))
+                        if not all(math.isfinite(v) and 0 <= v <= 1e6 for v in speed) or any(v >= 16 for v in tool):
+                            return None
+                    speed_columns.append(speed)
+                    tool_columns.append(tool)
                     offsets.append(off)
                     xs.append(xx)
                     ys.append(yy)
@@ -2123,8 +2268,15 @@ class PersistentIndexCache:
                 motion_extrusion=extrusion_columns,
                 layer_heights=header.get("layer_heights", []),
                 filament_diameter=header.get("filament_diameter", 1.75),
+                filament_diameters={int(k):v for k,v in header.get("filament_diameters", {}).items()},
+                motion_speeds=speed_columns, motion_tools=tool_columns,
+                layer_start_speeds=header.get("start_speeds", []),
+                layer_start_tools=header.get("start_tools", []),
+                colour_ranges={k:tuple(v) for k,v in header.get("colour_ranges", {}).items()},
                 extruder_events=extruder_events,
                 layer_start_retracted=start_retracted,
+                layer_start_retractions=start_retractions,
+                firmware_retractions=firmware_retractions,
                 layer_start_positions=starts,
                 layer_start_absolute=start_absolute,
                 layer_start_units=start_units,
@@ -2216,6 +2368,11 @@ class PersistentIndexCache:
             if index.motion_extrusion and not has_extrusions:
                 return
             header.update(extrusion_column=has_extrusions, layer_heights=index.layer_heights, filament_diameter=index.filament_diameter)
+            has_attributes = len(index.motion_speeds) == len(index.motion_tools) == layer_count and all(len(index.motion_speeds[i]) == len(index.motion_tools[i]) == counts[i] for i in range(layer_count))
+            if (index.motion_speeds or index.motion_tools) and not has_attributes:
+                return
+            header.update(filament_diameters=index.filament_diameters, motion_attributes=has_attributes, start_speeds=index.layer_start_speeds,
+                          start_tools=index.layer_start_tools, colour_ranges=index.colour_ranges, start_retractions=index.layer_start_retractions, firmware_retractions=index.firmware_retractions)
             event_columns = _event_columns(counts, index.extruder_events, index.layer_start_retracted)
             if event_columns is None:
                 return
@@ -2233,7 +2390,9 @@ class PersistentIndexCache:
             # geometry leave the hold as one consistent view.
             snapshot = [(offsets.tobytes(), index.motion_x[i].tobytes(),
                          index.motion_y[i].tobytes(), index.motion_z[i].tobytes(),
-                         index.motion_extrusion[i].tobytes() if has_extrusions else b"")
+                         index.motion_extrusion[i].tobytes() if has_extrusions else b"",
+                         index.motion_speeds[i].tobytes() if has_attributes else b"",
+                         index.motion_tools[i].tobytes() if has_attributes else b"")
                         for i, offsets in enumerate(index.motion_offsets)]
         path = self._path(identity)
         # Unique per CONCURRENT writer, not merely per instant: the
@@ -2247,12 +2406,14 @@ class PersistentIndexCache:
                 handle.write(_CACHE_MAGIC)
                 handle.write(struct.pack("<I", len(raw_header)))
                 handle.write(raw_header)
-                for offsets, xs, ys, zs, ee in snapshot:
+                for offsets, xs, ys, zs, ee, speed, tool in snapshot:
                     handle.write(offsets)
                     handle.write(xs)
                     handle.write(ys)
                     handle.write(zs)
                     handle.write(ee)
+                    handle.write(speed)
+                    handle.write(tool)
             os.replace(temp_path, path)
             self.prune(keep=path)
         except OSError:

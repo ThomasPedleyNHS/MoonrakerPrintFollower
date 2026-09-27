@@ -943,9 +943,17 @@ generation-two scans of those retained layers measured 121.858 ms versus
 8.453 ms. These isolated Python 3.10 measurements identify overhead; they do
 not predict Cura's Python 3.12 cold-index or distant-layer click latency.
 
-Translucent independently capped strokes can overlap at joins and produce darker
-dots. The renderer retains inexpensive direct blending; it does not add an
-offscreen opacity pass to conceal that cosmetic artifact.
+Translucent previous, next and current-ghost strokes render opaquely into
+separate viewport-sized GPU textures, then apply layer opacity once. Overlapping
+round caps no longer compound the opacity of the stroke bodies. Anti-alias
+coverage still blends only the one-pixel fringes. The printed prefix, travels,
+glyphs and grid retain direct GPU rendering. GPU consumers share the main item's
+immutable worker buffers through a typed QObject pointer; they submit no extra
+preparation jobs and never activate software geometry. Progress-only changes
+leave the translucent passes' settings and geometry unchanged. Each texture
+pass uses its own item-sized shader viewport, preserving pixel widths under
+zoom; the direct pass uses the window viewport. All passes carry the same
+layer-generation frame hold. Software rendering keeps its existing compositor.
 
 
 Attached GPU motion smoothing uses the existing `path_smoothing` setting.
@@ -1015,3 +1023,47 @@ motion in GPU mode and withdrawing when scrubbing backwards. The glyph cache
 uses event counts rather than fractional progress, so smoothing within one
 motion does not rebuild marker geometry. Firmware events after the last indexed
 motion are included at full playback.
+
+### Shared Preview colour modes
+
+`FollowerColourScheme` is the Cura boundary for the shared
+`layerview/layer_view_type` preference, theme `layerview_*` colours and
+active extruder material swatches. Either Preview or the follower dropdown
+updates the same preference. Host model access starts after engine creation;
+unavailable host colour interfaces retain the last successful palette (or the
+default palette before the first successful read) without
+preventing plugin registration. Theme and material signals refresh the snapshot.
+
+Index cache version 14 records modal feedrate (mm/s) and tool ID per motion,
+layer-start seeds and per-tool filament diameters. The compact indexing pass
+aggregates whole-print speed, deposited layer-height, bead-width and flow
+limits without retaining every layer's motion arrays. Prepared cache version 6
+stores the profiles in binary columns beside geometry. Distant-layer hydration
+reproduces the original tool and feedrate state; a tool switch is not a motion.
+
+The GPU stroke vertex carries speed and tool ID alongside physical width.
+Cura's Speed, Layer thickness, Line thickness and Flow gradient equations run
+in the vertex shader. Switching mode, palette or range changes uniforms and
+retains the geometry buffers. Material colour selects the motion's tool swatch.
+Previous and next layers use the selected colours with reduced opacity; the
+current layer ghost remains translucent grey. The software renderer uses the
+same projections, with colour state included in asynchronous scene identity.
+The legend shows material swatches, line-type keys or print-wide gradient bounds
+with units. QML-facing profile arrays and range bounds are QVariant lists,
+including freshly prepared data, so first-use legends cannot read `NaN`.
+
+A successful Cura palette snapshot is persisted as a small preference. If the
+host colour API is unavailable on a later launch, the last successfully read
+Cura palette remains available rather than reverting to unrelated colours.
+In True thickness mode travels have a fixed 1 logical-pixel stroke, independent
+of zoom and the saved explicit extrusion width, on GPU and software paths.
+
+The travel channel is split into Cura's Non retracted, Retracting, Retracted
+and Priming categories. Each uses its corresponding host Preview theme colour
+in every colour mode. The single Travels checkbox controls all four, and the
+printed motion boundary clips them identically. Stationary retract/prime moves
+remain glyphs rather than zero-length lines. Positive E that exceeds the
+remaining retraction is deposition, not a priming-only travel. Per-tool filament
+balances and firmware G10/G11 events cross layer boundaries and survive compact
+index hydration; prepared travel classes have a binary TRCL extension. The
+legacy combined travel channel remains available to existing consumers.
