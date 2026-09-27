@@ -1,4 +1,4 @@
-"""The file-backed prepared store's ONE format contract (v3): the
+"""The file-backed prepared store's current format contract: the
 layout, the per-layer states (EMPTY / CACHED / UNCACHEABLE), random
 access, identity gating, atomic completion, the size policy, the
 abort path and the startup temp cleanup. Every reader of the store's
@@ -15,7 +15,7 @@ import time
 import unittest
 
 from plugins.PlateProgress import decode_layer, encode_layer
-from plugins.PreparedStore import STATE_CACHED, STATE_EMPTY, PreparedCache
+from plugins.PreparedStore import STATE_CACHED, STATE_EMPTY, PreparedCache, _FORMAT_VERSION
 
 # The on-disk layout the hand-built files below must match byte for
 # byte (the writer's own constants, restated here so the malformed
@@ -26,7 +26,7 @@ _HDR_SIZE = struct.calcsize(_HDR_FMT)
 _ENTRY_SIZE = struct.calcsize(_ENTRY_FMT)
 
 
-def _write_raw(path, magic=b"MPFP", version=3, identity=b"print-1", count=2,
+def _write_raw(path, magic=b"MPFP", version=_FORMAT_VERSION, identity=b"print-1", count=2,
                complete=0, entries=(), table_bytes=None, payload=b""):
     """A cache file laid out byte for byte: the malformed shapes the
     writer itself never produces, so each reader's rejection reason
@@ -819,6 +819,33 @@ class PreparedStoreRejectionTests(unittest.TestCase):
         self.addCleanup(self._dir.cleanup)
         self.cache = PreparedCache(self._dir.name, max_bytes=256 * 1024 * 1024)
 
+    def test_raw_fixture_reaches_the_current_table_reader(self):
+        path = self.cache._path("print-1")
+        _write_raw(path, entries=[(STATE_EMPTY, 0, 0)] * 2)
+        self.assertEqual(self.cache.load_table("print-1"),
+                         {"table": [(STATE_EMPTY, 0, 0)] * 2, "complete": False})
+        self.assertEqual(self.cache._file_progress(path)["count"], 2)
+
+    def test_both_readers_reject_invalid_states_and_payload_extents(self):
+        path = self.cache._path("print-1")
+        start = _HDR_SIZE + len(b"print-1") + _ENTRY_SIZE
+        for entry in ((7, 0, 0), (STATE_CACHED, 0, 1),
+                      (STATE_CACHED, start - 1, 1),
+                      (STATE_CACHED, start, 0), (STATE_CACHED, start, 2)):
+            with self.subTest(entry=entry):
+                _write_raw(path, count=1, complete=1, entries=[entry], payload=b"x")
+                self.assertIsNone(self.cache.load_table("print-1"))
+                self.assertIsNone(self.cache._file_progress(path))
+
+    def test_both_readers_accept_a_valid_payload_extent(self):
+        path = self.cache._path("print-1")
+        start = _HDR_SIZE + len(b"print-1") + _ENTRY_SIZE
+        _write_raw(path, count=1, complete=1,
+                   entries=[(STATE_CACHED, start, 1)], payload=b"x")
+        loaded = self.cache.load_table("print-1")
+        self.assertEqual(self.cache.read("print-1", loaded["table"], 0), b"x")
+        self.assertEqual(self.cache._file_progress(path)["cached"], 1)
+
     def test_a_header_cut_short_reads_as_absent(self):
         # The copy that died inside the header (or the file the volume
         # truncated): no version, no count, no identity to trust.
@@ -858,9 +885,9 @@ class PreparedStoreRejectionTests(unittest.TestCase):
         # empty pass (no identity, no layer count).
         refusing = {
             "torn": b"MPFP\x03\x00",
-            "magic": struct.pack(_HDR_FMT, b"XXXX", 3, 7, 2, 0) + b"print-1",
+            "magic": struct.pack(_HDR_FMT, b"XXXX", _FORMAT_VERSION, 7, 2, 0) + b"print-1",
             "version": struct.pack(_HDR_FMT, b"MPFP", 2, 7, 2, 0) + b"print-1",
-            "no-layers": struct.pack(_HDR_FMT, b"MPFP", 3, 7, 0, 0) + b"print-1",
+            "no-layers": struct.pack(_HDR_FMT, b"MPFP", _FORMAT_VERSION, 7, 0, 0) + b"print-1",
         }
         for label, raw in refusing.items():
             path = os.path.join(self._dir.name, label + ".mpfp.tmp-99999-1")

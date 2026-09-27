@@ -1,11 +1,12 @@
 """The file-backed prepared cold store: every layer's compact PPL1 encoding, random-accessible on disk
 so the complete print never sits in the Python heap.
 
-Layout (format version 3):
+Layout (format version 6):
     magic b"MPFP" + format version u32
-    identity (u16 length + utf8 — the RemoteFileIdentity stable key)
-    layer count u32
+    identity length u16
+    layer count u16
     completion flag u8 — 1 once the pass has WALKED EVERY layer
+    identity utf8 bytes — the RemoteFileIdentity stable key
     layer table: count x (u8 state, u64 offset, u32 length)
         state 0 EMPTY       — the pass never resolved it (a latched
                               hydrate): retry on the next session
@@ -18,9 +19,10 @@ The per-layer truth rides the STATE — a (0, 0) entry is EMPTY, not an
 overloaded uncacheable marker: the completion flag no longer has to
 disambiguate it. Random access reads one layer by seeking the table —
 no preceding layers are ever decoded. Writes go to a temporary file
-and finalise atomically (the header and the table are written LAST,
-then the rename), so a partially written cache is never treated as
-complete. The directory's total usage is bounded by a size policy
+and finalise atomically. Incremental writes checkpoint the header and
+table while incomplete; finalisation sets completion before the rename,
+so an interrupted pass can resume without claiming to be complete.
+The directory's total usage is bounded by a size policy
 with print-level recency eviction.
 """
 from __future__ import annotations
@@ -97,6 +99,17 @@ _DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 STATE_EMPTY = 0        # never resolved — retry on the next session
 STATE_CACHED = 1       # the packed payload follows
 STATE_UNCACHEABLE = 2  # walked and refused — never retry
+
+
+def _valid_table(table, payload_start: int, size: int) -> bool:
+    """Published and interrupted files obey the same table contract."""
+    for state, offset, length in table:
+        if state == STATE_CACHED:
+            if offset < payload_start or length <= 0 or offset + length > size:
+                return False
+        elif state not in (STATE_EMPTY, STATE_UNCACHEABLE):
+            return False
+    return True
 
 
 class PreparedCache:
@@ -227,17 +240,15 @@ class PreparedCache:
                                             i * struct.calcsize(_TABLE_ENTRY_FMT))
                          for i in range(count)]
                 size = os.fstat(handle.fileno()).st_size
+                if not _valid_table(table, handle.tell(), size):
+                    return None
                 cached = 0
                 uncacheable = 0
-                for state, offset, length in table:
+                for state, _offset, _length in table:
                     if state == STATE_CACHED:
-                        if offset <= 0 or offset + length > size:
-                            return None
                         cached += 1
                     elif state == STATE_UNCACHEABLE:
                         uncacheable += 1
-                    elif state != STATE_EMPTY:
-                        return None  # an unknown state reads corrupt
                 return {"complete": bool(complete), "cached": cached,
                         "uncacheable": uncacheable, "count": count}
         except OSError:
@@ -308,12 +319,11 @@ class PreparedCache:
                     return None
                 table = [struct.unpack_from(_TABLE_ENTRY_FMT, raw, i * struct.calcsize(_TABLE_ENTRY_FMT))
                          for i in range(count)]
-                # A truncated file must never read as complete: the
-                # payload area's extent must fit the file's own size.
+                # Reject corrupt states and payloads that overlap the
+                # header/table, as well as a truncated payload area.
                 size = os.fstat(handle.fileno()).st_size
-                for state, offset, length in table:
-                    if state == STATE_CACHED and offset + length > size:
-                        return None
+                if not _valid_table(table, handle.tell(), size):
+                    return None
                 return {"table": table, "complete": bool(complete)}
         except OSError:
             return None
@@ -384,8 +394,9 @@ class PreparedCache:
         """The incremental writer: a temp
         file accumulates the pass's encodings layer by layer, so the
         first session never retains the whole cold store in RAM. The
-        header and the table are written at `finish_write`; a partial
-        temp file never reads as complete."""
+        header and empty table are written immediately, and each appended
+        layer checkpoints its table entry. Only `finish_write` marks the
+        file complete; interrupted files can resume from their checkpoints."""
         if layer_count <= 0:
             return None
         path = self._path(identity)

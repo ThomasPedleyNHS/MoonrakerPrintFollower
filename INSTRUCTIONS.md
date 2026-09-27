@@ -140,9 +140,8 @@ in `ARCHITECTURE.md`; release history lives in `CHANGELOG.md`.
   scripts as a render smoke test (each script fails on a blank capture)
   but no longer ships the PNGs as artifacts. These capture the 2-D UI
   only: the 3-D Preview (bed-mesh overlay on a rendered model) needs a
-  real Cura session — capture those by hand for marketing. Automating
-  that (running real Cura under a virtual display) was considered and
-  deliberately rejected: the cost and fragility are not worth it.
+  real Cura session. The native harness exercises Preview with screenshots
+  and video (see TESTING.md); choose marketing captures deliberately.
 
 ## Windows development
 
@@ -179,7 +178,7 @@ Getting started (once per machine):
 3. `make lint`, `make run_tests`, `make test_files FILES="…"`,
    `make package` — the same commands as everywhere else. `JOBS` (or
    `--jobs`) sizes the one-process-per-file fan-out; the default is the
-   machine's core count, capped at 32.
+   machine's core count, capped at 16.
 
 What differs on this leg, and why:
 
@@ -454,9 +453,11 @@ relative to the QML file's directory.
 
 ### Persisting monitor panel state
 
-State lives in one plugin-owned JSON file next to cura.cfg —
-`Resources.getStoragePath(Resources.Preferences, SECTIONS_FILE_NAME)` in
-`MoonrakerMonitorModel.py` — never Uranium's preference store, which drops
+Production panel state lives in `MoonrakerPrintFollower/state.json` under
+Cura's preferences directory. `FollowerRuntime` constructs the shared
+`PluginPersistence` facade and the model merges through it. The old
+`moonrakerprintfollower_sections.json` path remains a migration source and
+a standalone test fallback — never Uranium's preference store, which drops
 reads and writes on unregistered keys, only persists on Cura's own save
 cycle, and mangles values through configparser.
 

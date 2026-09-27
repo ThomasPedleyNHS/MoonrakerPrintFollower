@@ -7,8 +7,6 @@ on:
   # The gate loop runs without a tag: the full matrix on demand from
   # main, so a failing unit costs minutes instead of a junk tag.
   workflow_dispatch:
-  # PRs that touch the gate machinery run the full matrix before they
-  # can merge; product-code PRs keep the fast two-unit smoke in ci.yml.
   # Every PR runs the full matrix: the ruleset requires each unit's
   # check, so a skipped matrix (a paths filter) would block merges.
   pull_request:
