@@ -268,6 +268,7 @@ class HydrationWindowTests(unittest.TestCase):
 
     def _bind(self, layers=5, hydrated=()):
         index = LayerMotionIndex(ranges=[(value * 10, value * 10 + 10) for value in range(layers)])
+        index.motion_offsets = [array("Q") for _ in range(layers)]
         index.compact = True
         index.hydrated_layers = set(hydrated)
         view = self.qt.load("GCodeIndexService").IndexView(self.job, index)

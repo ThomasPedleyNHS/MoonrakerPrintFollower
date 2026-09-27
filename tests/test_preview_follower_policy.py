@@ -283,13 +283,13 @@ class FollowerPathTests(harness.FollowerPathTests):
         self.assertEqual(1, motion.reset_calls)
 
     def test_a_missing_or_unparsable_file_position_waits(self):
-        self.assertEqual("Waiting for file position", self.path_detail(st={"gcode_move": {}})[0])
-        self.assertEqual("Waiting for file position",
+        self.assertEqual("Waiting for motion position", self.path_detail(st={"gcode_move": {}})[0])
+        self.assertEqual("Waiting for motion position",
                          self.path_detail(vsc={"file_position": "far"})[0])
 
     def test_a_maximum_path_count_that_is_missing_or_empty(self):
         self.view.maximum = None
-        self.assertEqual("Waiting for file position", self.path_detail()[0])
+        self.assertEqual("Waiting for Cura paths", self.path_detail()[0])
         self.view.maximum = 0
         self.assertEqual("Layer has no paths", self.path_detail()[0])
 
@@ -351,7 +351,7 @@ class FollowerEtaTests(harness.FollowerEtaTests):
 
     def test_remaining_uses_the_within_layer_fraction_as_a_floor(self):
         follower, _, index = self.make(elapsed=[0.0, 60.0, 120.0, 180.0, 240.0])
-        follower.observe(harness.snapshot(3),
+        follower.observe(harness.snapshot(3, motion=harness.MotionProgress(3, 750, 1000, "test")),
                          harness.status(print_stats={"print_duration": 60.0},
                                 virtual_sdcard={"file_position": 400}),
                          harness.preview_config(path_follow=True),

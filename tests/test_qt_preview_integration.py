@@ -98,14 +98,14 @@ class PreviewMotionTests(harness.PreviewMotionTests):
             # The header is written on rollover; observation rows always are.
             self.assertIn(",obs,0,0.500000,", content)
 
-    def test_target_behind_display_never_moves_backwards(self):
+    def test_shared_correction_behind_display_is_applied_immediately(self):
         self.motion.write(0, 0.9)
         self.qt.events(200)
-        reached = self.view.path
-        self.motion.write(0, 0.3)  # stale/ambiguous observation behind us
+        self.motion.write(0, 0.3)  # accepted recovery, already judged by the service
+        self.assertEqual(self.view.path, 30.0)
         self.qt.events(200)
-        self.assertGreaterEqual(self.view.path, reached)
-        self.assertLessEqual(self.view.path, 90.0)
+        self.assertEqual(self.view.path, 30.0)
+        self.assertFalse(self.motion._timer.isActive())
 
     def test_writes_are_remembered(self):
         self.motion.write(0, 0.5)

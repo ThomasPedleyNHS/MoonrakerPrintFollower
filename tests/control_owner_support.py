@@ -249,13 +249,18 @@ if QT_AVAILABLE:
         def set_manual_split(self, motions):
             self.manual_split = motions
 
-        def plate_progress(self, anchor, file_position=None, live_position=None, paused=False, extruding=None):
+        def observe_motion(self, anchor, file_position=None, live_position=None, paused=False, extruding=None):
+            from plugins.PrintState import MotionProgress
+            return MotionProgress(anchor, self.plate_split if file_position is not None else None, 100)
+
+        def plate_progress(self, anchor, file_position=None, live_position=None, paused=False, extruding=None, *, motion=...):
             # The service-side prep's shape; the coordinator tests
             # pin the wiring, not the payload.
             self.plate_anchors.append(anchor)
             self.plate_positions.append(file_position)
             self.plate_lives.append(live_position)
-            return {"layers": {}, "split": self.plate_split,
+            split = self.plate_split if motion is ... else motion.split if motion is not None else None
+            return {"layers": {}, "split": split,
                     "method": "unavailable", "anchor": anchor}
 
         def plate_visited(self, anchor, split, rows):

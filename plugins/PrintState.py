@@ -18,6 +18,21 @@ class PhysicalLayer:
 
 
 @dataclass(frozen=True)
+class MotionProgress:
+    """One accepted physical boundary, shared by every live renderer."""
+    layer: int
+    split: Optional[int]
+    motion_total: int
+    method: str = "motion index"
+
+    @property
+    def fraction(self) -> Optional[float]:
+        if self.split is None or self.motion_total <= 0:
+            return None
+        return max(0.0, min(1.0, self.split / self.motion_total))
+
+
+@dataclass(frozen=True)
 class PrintSnapshot:
     job_key: Optional[JobKey] = None
     observation: Optional[PrintObservation] = None
@@ -28,11 +43,12 @@ class PrintSnapshot:
     # timing and the observed speed ratio, when the coordinator can
     # compute it; None means "use the plain blend".
     layer_eta: Optional[float] = None
-    # Within-layer progress from the index's byte ranges: the file
-    # position between the layer's first and last byte. None without an
-    # index (the nozzle's Z never moves within a layer, so Z cannot
-    # express this).
+    # Monitor's within-layer readout, projected from the same accepted
+    # motion boundary as both followers. None when that boundary is unavailable.
     layer_progress: Optional[float] = None
+    # Accepted physical progress for this exact telemetry frame. Renderers
+    # may smooth its display but must not match or floor it independently.
+    motion_progress: Optional[MotionProgress] = None
     # The index view is built and usable (the Improve-ETA state).
     index_ready: bool = False
     # The monitor-only download's byte fraction (None while nothing is

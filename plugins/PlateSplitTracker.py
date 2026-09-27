@@ -1,4 +1,4 @@
-"""Single owner for the live plate's accepted motion boundary.
+"""Single owner for the live print's accepted motion boundary in both views.
 
 Geometry matching supplies a raw physical candidate. This policy owns the
 per-print/layer floor, ambiguity evidence and search-window feedback. Keeping

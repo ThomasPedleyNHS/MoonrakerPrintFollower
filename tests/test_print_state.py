@@ -5,12 +5,22 @@ from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 import unittest
 
-from plugins.PrintState import LayerResolver, PhysicalLayer, PrintSnapshot
+from plugins.PrintState import LayerResolver, MotionProgress, PhysicalLayer, PrintSnapshot
 from plugins.PrinterConfig import PrinterConfig
 from plugins.RemoteJobService import RemoteJobService
 
 
 class PrintStateTests(unittest.TestCase):
+    def test_motion_progress_is_an_immutable_bounded_projection(self):
+        motion = MotionProgress(4, 25, 100)
+        self.assertEqual(motion.fraction, 0.25)
+        with self.assertRaises(FrozenInstanceError):
+            motion.split = 30
+        for split, count, expected in ((None, 100, None), (0, 0, None),
+                                       (-1, 100, 0.0), (120, 100, 1.0)):
+            with self.subTest(split=split, count=count):
+                self.assertEqual(MotionProgress(4, split, count).fraction, expected)
+
     def test_physical_snapshot_is_immutable(self):
         snapshot = PrintSnapshot(layer=PhysicalLayer(5, 10))
         with self.assertRaises(FrozenInstanceError): snapshot.layer.index = 4

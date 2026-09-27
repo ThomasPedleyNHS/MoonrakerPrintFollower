@@ -79,7 +79,7 @@ from plugins.ToolheadPolicy import (
     push_op,
     z0_script,
 )
-from plugins.PrintState import LayerResolver, PhysicalLayer, PrintSnapshot
+from plugins.PrintState import LayerResolver, MotionProgress, PhysicalLayer, PrintSnapshot
 from plugins.PreviewFollower import PreviewFollower, preview_override_kind
 
 if QT_AVAILABLE:
@@ -171,9 +171,20 @@ def preview_config(**overrides):
     return SimpleNamespace(**base)
 
 
-def snapshot(layer=None, active=True, state="printing"):
+def snapshot(layer=None, active=True, state="printing", motion=None):
     return SimpleNamespace(layer=SimpleNamespace(index=layer), active=active,
-                           observation=SimpleNamespace(state=state))
+                           observation=SimpleNamespace(state=state), motion_progress=motion)
+
+
+def motion_observation(layer, index, st):
+    """The already-accepted service output at the Preview's input seam."""
+    try:
+        int((st.get("virtual_sdcard") or {}).get("file_position"))
+    except (TypeError, ValueError):
+        return None
+    if index is None or not index.hydrated(layer):
+        return None
+    return MotionProgress(layer, round(index._fraction * 1000), 1000, index.method)
 
 
 def status(**overrides):
@@ -397,8 +408,9 @@ class FollowerObserveTests(unittest.TestCase):
         self.follower, self.port = follower_of(self.view)
 
     def observe(self, snap=None, st=None, config=None, index=None):
-        return self.follower.observe(snap or snapshot(3), st or status(),
-                                     config or preview_config(), index or FakeIndex())
+        snap, st, index = snap or snapshot(3), st or status(), index or FakeIndex()
+        snap.motion_progress = motion_observation(snap.layer.index, index, st)
+        return self.follower.observe(snap, st, config or preview_config(), index)
 
 
 class FollowerPathTests(unittest.TestCase):
@@ -418,7 +430,7 @@ class FollowerPathTests(unittest.TestCase):
             elif vsc is not None:
                 st["virtual_sdcard"] = vsc
         index = FakeIndex() if index is ... else index
-        return self.follower.observe(snapshot(3), st,
+        return self.follower.observe(snapshot(3, motion=motion_observation(3, index, st)), st,
                                      config or preview_config(path_follow=True), index)
 
     def path_detail(self, *, index=..., st=None, view=None, vsc=..., smooth=True):
@@ -432,7 +444,8 @@ class FollowerPathTests(unittest.TestCase):
             elif vsc is not None:
                 st["virtual_sdcard"] = vsc
         index = FakeIndex() if index is ... else index
-        return self.follower._follow_path(self.port.view, 3, st, index, smooth=smooth)
+        return self.follower._follow_path(self.port.view, 3, index,
+                                         motion_observation(3, index, st), smooth=smooth)
 
 
 class FollowerEtaTests(unittest.TestCase):

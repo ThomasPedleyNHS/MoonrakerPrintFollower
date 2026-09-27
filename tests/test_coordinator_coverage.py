@@ -2,17 +2,39 @@
 from tests import control_owner_support as harness
 
 class CoordinatorCoverageTests(harness.CoordinatorCoverageTests):
+    def test_both_views_receive_the_same_once_matched_motion_observation(self):
+        parts = self._printing(self._make())
+        parts.index.view = harness._view()
+        parts.index.plate_split = 27
+        parts.client.connected = True
+        calls = []
+        original = parts.index.observe_motion
+
+        def observe(*args, **kwargs):
+            result = original(*args, **kwargs)
+            calls.append(result)
+            return result
+
+        parts.index.observe_motion = observe
+        parts.coordinator.refresh()
+        self.assertEqual(len(calls), 1)
+        snapshot = parts.coordinator.snapshot
+        self.assertIs(snapshot.motion_progress, calls[0])
+        self.assertIs(parts.preview.observed[-1][0].motion_progress, calls[0])
+        self.assertEqual(snapshot.plate_progress["split"], calls[0].split)
+        self.assertEqual(snapshot.layer_progress, calls[0].fraction)
+
     def test_travel_velocity_roundoff_cannot_confirm_layer_entry(self):
         parts = self._printing(self._make())
         parts.index.view = harness._view()
         calls = []
-        real = parts.index.plate_progress
+        real = parts.index.observe_motion
 
         def record(anchor, file_position=None, live_position=None, paused=False, extruding=None):
             calls.append(extruding)
             return real(anchor, file_position, live_position, paused=paused, extruding=extruding)
 
-        parts.index.plate_progress = record
+        parts.index.observe_motion = record
         # The connected printer reports tiny positive floating-point residue
         # while travelling: it must not open the new layer's extrusion gate.
         for velocity, expected in ((None, None), (0.0, False),
@@ -216,11 +238,13 @@ class CoordinatorCoverageTests(harness.CoordinatorCoverageTests):
     def test_a_matching_index_view_arms_the_layer_progress(self):
         parts = self._printing(self._make())
         parts.index.view = harness._view()
+        parts.index.plate_split = 50
         parts.coordinator.refresh()
         snapshot = parts.coordinator.snapshot
         self.assertTrue(snapshot.index_ready)
         self.assertEqual(snapshot.layer_progress, 0.5)
-        # A position past the range is clamped, never extrapolated.
+        # The readout receives the service's new accepted boundary.
+        parts.index.plate_split = 100
         parts.client.statusReceived.emit(
             harness._status("printing", virtual_sdcard={"file_position": 99999}))
         self.assertEqual(parts.coordinator.snapshot.layer_progress, 1.0)
@@ -369,12 +393,11 @@ class CoordinatorCoverageTests(harness.CoordinatorCoverageTests):
         self.assertEqual(parts.index.plate_positions[-1], 4500)
 
     def test_the_plate_payload_shares_the_resolved_file_position(self):
-        # A view with a valid position: the ONE resolved value feeds
-        # both consumers — the layer fraction measures it (4500 of the
-        # 4000..5000 range) and the plate split is handed the same
-        # offset.
+        # The offset feeds the shared service, whose accepted fraction
+        # drives the readout as well as the plate's physical boundary.
         parts = self._printing(self._make())
         parts.index.view = harness._view()
+        parts.index.plate_split = 50
         parts.coordinator.refresh()
         snapshot = parts.coordinator.snapshot
         self.assertTrue(snapshot.index_ready)
@@ -385,15 +408,15 @@ class CoordinatorCoverageTests(harness.CoordinatorCoverageTests):
     def test_a_monitor_only_index_builds_the_plate_payload_without_a_view(self):
         # The Improve-ETA download leaves the index's job key UNRESOLVED
         # (it names the active print, never a loaded file), so the
-        # identity gate refuses the view — no view, hence no layer
-        # fraction, but the plate still anchors on the resolved
-        # physical layer and reads the live position.
+        # identity gate refuses the Preview view, but the shared physical
+        # observation and Monitor readout still use the print's own index.
         parts = self._printing(self._make())
         parts.index.view = harness._view(job_key=())
+        parts.index.plate_split = 37
         parts.coordinator.refresh()
         snapshot = parts.coordinator.snapshot
         self.assertFalse(snapshot.index_ready)
-        self.assertIsNone(snapshot.layer_progress)
+        self.assertEqual(snapshot.layer_progress, 0.37)
         self.assertEqual(parts.index.plate_anchors, [4])
         self.assertEqual(parts.index.plate_positions, [4500])
         self.assertIsNotNone(snapshot.plate_progress)
@@ -641,11 +664,11 @@ class CoordinatorCoverageTests(harness.CoordinatorCoverageTests):
         calls = []
         real = parts.index.plate_progress
 
-        def reentrant(anchor, file_position=None, live_position=None, paused=False, extruding=None):
+        def reentrant(anchor, file_position=None, live_position=None, paused=False, extruding=None, *, motion=...):
             calls.append((anchor, file_position, live_position, paused))
             if len(calls) == 1:
                 parts.client.statusReceived.emit(late)
-            return real(anchor, file_position, live_position, paused=paused, extruding=extruding)
+            return real(anchor, file_position, live_position, paused=paused, extruding=extruding, motion=motion)
 
         parts.index.plate_progress = reentrant
         parts.coordinator.refresh()

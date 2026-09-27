@@ -316,11 +316,17 @@ class PrintCoordinator(QObject):
             if position is not None and not self._jobs.position_attributed(position):
                 position = 0
                 live_position = None
-            layer_progress = None
-            if view is not None and physical.index is not None and 0 <= physical.index < len(view.ranges):
-                start, end = view.ranges[physical.index]
-                if start is not None and end is not None and end > start and position is not None:
-                    layer_progress = max(0.0, min(1.0, (position - start) / (end - start)))
+            # Match exactly once for this telemetry frame. Presentation
+            # readiness and either view's attach/scrub state do not own the
+            # physical floor; every live consumer receives this same result.
+            motion_progress = None
+            extruder_velocity = number((status.get("motion_report") or {}).get("live_extruder_velocity"), None)
+            extruding = None if extruder_velocity is None else extruder_velocity > 1e-6
+            if plate_available and physical.index is not None:
+                motion_progress = self._index.observe_motion(
+                    physical.index, position, live_position,
+                    paused=status_stats.get("state") == "paused", extruding=extruding)
+            layer_progress = motion_progress.fraction if motion_progress is not None else None
             # The monitor-only download's terminal conditions (panel P1-1).
             self._loads.retire_monitor(view is not None)
             load_active = self._loads.active
@@ -377,13 +383,9 @@ class PrintCoordinator(QObject):
                 # stayed on it (the live report: detaching did nothing
                 # visible).
                 lookup_start = time.monotonic()
-                extruder_velocity = number((status.get("motion_report") or {}).get("live_extruder_velocity"), None)
-                # Klipper can leave positive floating-point residue during
-                # a travel (observed 3.55e-15 mm/s). It cannot confirm entry
-                # into extrusion geometry on the next layer.
                 plate_progress_payload = self._index.plate_progress(
                     physical.index, position, live_position, paused=status_stats.get("state") == "paused",
-                    extruding=None if extruder_velocity is None else extruder_velocity > 1e-6)
+                    extruding=extruding, motion=motion_progress)
                 if self._manual_serving_active():
                     manual_payload = self._index.plate_progress(
                         self._plate_anchor, None, live_position)
@@ -414,7 +416,7 @@ class PrintCoordinator(QObject):
             self._frame = status
             self._snapshot = PrintSnapshot(job, observation, physical,
                 estimate if estimate > 0 else None, self._files.metadata_complete,
-                layer_progress=layer_progress, index_ready=view is not None,
+                layer_progress=layer_progress, motion_progress=motion_progress, index_ready=view is not None,
                 download_fraction=self._files.download_fraction,
                 indexing=self._index.phase == "indexing",
                 index_fraction=self._index.progress if self._index.phase == "indexing" else None,

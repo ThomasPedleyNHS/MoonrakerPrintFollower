@@ -34,6 +34,7 @@ from .PlateProgress import (
 )
 from .PlateSplitTracker import PlateSplitTracker
 from .PreparedStore import STATE_CACHED, STATE_EMPTY, STATE_UNCACHEABLE
+from .PrintState import MotionProgress
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class IndexView:
         return not self.compact or layer in self._index.hydrated_layers
 
     def fraction(self, layer, position, live, minimum=None):
+        """Stateless index query; live renderers consume snapshot motion progress."""
         return self._index.refined_fraction(layer, position, live, minimum_fraction=minimum)
 
     def layer_at(self, position):
@@ -845,9 +847,29 @@ class GCodeIndexService(QObject):
                     return self._view._index.motion_count(anchor)
                 return self._manual_split
             return None
-        memo = self._plate_layers_memos.get(anchor)
-        if memo is None or not memo[1].get("current"):
+        return self.observe_motion(anchor, file_position, live_position,
+                                   paused=paused, extruding=extruding).split
+
+    def observe_motion(self, anchor, file_position, live_position=None, paused=False, extruding=None):
+        """Accept one live observation independently of presentation readiness.
+
+        The coordinator calls this once per frame and publishes the immutable
+        result to both renderers. Manual plate scrubbing never enters here.
+        """
+        if self._view is None or not isinstance(anchor, int) \
+                or not 0 <= anchor < len(self._view.ranges):
+            return MotionProgress(anchor, None, 0, "unavailable")
+        index = self._view._index
+        with index.cache_lock:
+            total = index.motion_count(anchor)
+            split = self._observe_split(anchor, file_position, live_position, paused, extruding)
+        return MotionProgress(anchor, split, total,
+                              "motion index" if split is not None else "unavailable")
+
+    def _observe_split(self, anchor, file_position, live_position, paused, extruding):
+        if file_position is None:
             return None
+        memo = self._plate_layers_memos.get(anchor)
         index = self._view._index
         with index.cache_lock:
             coarse = _split_index(index, anchor, file_position)
@@ -882,7 +904,7 @@ class GCodeIndexService(QObject):
                         refined = self._refine_over_payload(
                             memo[1].get("current"), coarse, live_position,
                             floor, ahead=tracker.payload_ahead_window,
-                            stall=tracker.stall_polls)
+                            stall=tracker.stall_polls) if memo is not None else None
                         raw = refined
                         tracker.observe_payload_advance(refined)
             result = tracker.accept(
@@ -1268,12 +1290,13 @@ class GCodeIndexService(QObject):
                              if entry[0] not in self._visited]
         return stop
 
-    def plate_progress(self, anchor, file_position=None, live_position=None, paused=False, extruding=None):
+    def plate_progress(self, anchor, file_position=None, live_position=None, paused=False, extruding=None, *, motion=...):
         """The composed payload (the tests and the one-shot consumers):
         the memoised layers plus the volatile split. The motion total is
         the progress slider's range — the layer's own edge count."""
         layers = self.plate_layers(anchor) if self._view is not None else {}
-        split = self.plate_split(anchor, file_position, live_position, paused=paused, extruding=extruding)
+        split = self.plate_split(anchor, file_position, live_position, paused=paused, extruding=extruding) \
+            if motion is ... else motion.split if motion is not None and motion.layer == anchor else None
         method = "motion index" if split is not None else "unavailable"
         motion_total = 0
         if self._view is not None:

@@ -379,7 +379,13 @@ class CameraFpsControlTests(harness.CameraFpsControlTests):
         self.assertAlmostEqual(pane.property("cameraDisplayOffsetX"),
                                anchor * (1 - displayed), delta=1.0,
                                msg="the pointer's image point must stay fixed during the glide")
-        self._pump_ms(350)
+        # Qt timers can be coalesced on a busy/offscreen macOS runner.
+        # Wait for the observable endpoint rather than assuming a tick count
+        # within 350 ms; the intermediate assertions above still prove easing.
+        self._wait_until(window, lambda _image:
+                         pane.property("cameraDisplayZoom") == pane.property("cameraZoom")
+                         and pane.property("cameraDisplayOffsetX") == pane.property("cameraPanOffsetX"),
+                         timeout=5.0)
         self.assertEqual(pane.property("cameraDisplayZoom"), pane.property("cameraZoom"))
         self.assertEqual(pane.property("cameraDisplayOffsetX"), pane.property("cameraPanOffsetX"))
         # Zooming out past the fit stops at the fit and re-centres.
@@ -390,7 +396,9 @@ class CameraFpsControlTests(harness.CameraFpsControlTests):
                                msg="the fit is the floor")
         self.assertAlmostEqual(pane.property("cameraPanX"), 0.0, delta=1e-6)
         self.assertAlmostEqual(pane.property("cameraPanY"), 0.0, delta=1e-6)
-        self._pump_ms(350)
+        self._wait_until(window, lambda _image:
+                         pane.property("cameraDisplayZoom") == 1.0
+                         and pane.property("cameraDisplayOffsetX") == 0.0, timeout=5.0)
         self.assertEqual(pane.property("cameraDisplayZoom"), 1.0)
         self.assertEqual(pane.property("cameraDisplayOffsetX"), 0.0)
 

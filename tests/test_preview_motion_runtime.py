@@ -2,6 +2,22 @@
 from tests import preview_family_support as harness
 
 class PreviewMotionTests(harness.PreviewMotionTests):
+    def test_a_shared_backwards_correction_replaces_the_old_glide(self):
+        self.motion.write(1, 0.2)
+        self.clock.advance(1.0)
+        self.motion.write(1, 0.9)
+        self.motion._displayed = 0.7
+        self.assertTrue(self.motion._timer.isActive())
+        self.motion.write(1, 0.3)
+        self.assertEqual((self.motion._target, self.motion._displayed), (0.3, 0.3))
+        self.assertEqual(self.view.paths[-1], 300.0)
+        self.assertEqual(self.motion._velocity, 0.0)
+        self.assertFalse(self.motion._timer.isActive())
+        self.assertEqual(len(self.motion._history), 1)
+        self.clock.advance(1.0)
+        self.motion.write(1, 0.4)
+        self.assertTrue(self.motion._timer.isActive(), "normal smoothing must resume after correction")
+
     def test_the_first_observation_jumps_and_clears_the_old_layer(self):
         self.motion.write(1, 0.25)
         self.assertEqual((1, 0.25, 0.25), (self.motion._layer, self.motion._target,

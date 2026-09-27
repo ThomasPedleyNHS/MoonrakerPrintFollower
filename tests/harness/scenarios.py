@@ -1547,7 +1547,7 @@ SCENARIOS = [
          {"op": "wait_model", "prop": "followerShowPrevious", "value": True, "budget": 15},
          {"op": "wait_model", "prop": "followerShowNext", "value": True, "budget": 15},
          {"op": "wait_model", "prop": "followerShowBase", "value": True, "budget": 15},
-         {"op": "assert_model", "prop": "followerLineScale", "value": 0.7, "budget": 15},
+         {"op": "assert_model", "prop": "followerLineScale", "value": 1.0, "budget": 15},
          # The checkbox row's real input: "Travels" is the one label the
          # row does not share with the legend, so the press is
          # unambiguous — toggled on, read back, and set back off.

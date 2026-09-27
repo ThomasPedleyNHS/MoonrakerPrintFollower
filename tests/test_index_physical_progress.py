@@ -2,6 +2,26 @@
 from tests import index_plate_support as harness
 
 class PlateSplitRefinementTests(harness.PlateSplitRefinementTests):
+    def test_live_motion_is_independent_of_geometry_and_shared_without_rematching(self):
+        from unittest.mock import patch
+
+        offsets = self._bind()
+        self.service._plate_layers_memos.clear()
+        self.service._decoded_lru.clear()
+        # The hydrated motion index can track even before any renderer asks
+        # for a layer. Holding a snapshot must not require a decoded canvas.
+        motion = self.service.observe_motion(0, offsets[19], (5.0, 0.0, 0.2))
+        self.assertEqual((motion.split, motion.motion_total, motion.fraction), (6, 20, 0.3))
+        floor = self.service._split_tracker.floor
+        with patch.object(self.service, "observe_motion", side_effect=AssertionError("double match")):
+            payload = self.service.plate_progress(0, offsets[19], (5.0, 0.0, 0.2), motion=motion)
+        self.assertEqual(payload["split"], motion.split)
+        self.assertEqual(self.service._split_tracker.floor, floor)
+        self.service.set_manual_anchor(0)
+        self.service.set_manual_split(2)
+        self.assertEqual(self.service.plate_progress(0)["split"], 2)
+        self.assertEqual(self.service._split_tracker.floor, floor, "manual scrubbing must not change physical tracking")
+
     def test_excluded_object_entry_travel_cannot_seed_a_future_boundary(self):
         for compact in (False, True):
             with self.subTest(compact=compact):

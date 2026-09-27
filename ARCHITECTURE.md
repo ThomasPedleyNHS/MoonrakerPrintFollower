@@ -71,11 +71,11 @@ compile wait without changing pane layout or initialization ordering.
 | `NextPausePipeline.py` | The next scheduled pause: the time anchor, the job-boundary layer-index reset, the baked merge and the pause computation | Downloads or the monitor's verdicts |
 | `SocketFraming.py` | Pure RFC 6455 framing: handshake build/verify, frame codec, extended lengths, size caps, close codes | Qt, sockets, policy |
 | `RemoteJobService.py` | Print observation and same-filename run identity | Preview selection |
-| `PrintState.py` | Immutable `PrintSnapshot`/`PhysicalLayer` and the single `LayerResolver` | QML/Cura writes |
+| `PrintState.py` | Immutable `PrintSnapshot`/`PhysicalLayer`/`MotionProgress` and the single `LayerResolver` | QML/Cura writes |
 | `RemoteFileService.py` | Metadata, streamed downloads, cached files and `FileLease` — the identity-neutral `request_metadata_only` (4.2.0) included | Index algorithms or Cura loading |
 | `DownloadStream.py` | Bounded streaming G-code downloads to disk and the `DownloadOperation` lifecycle | Networking policy or Cura |
-| `GCodeIndexService.py` | Index lifecycle, bounded worker execution and `IndexView` | Networking or UI |
-| `PlateSplitTracker.py` | Pure live-plate boundary policy: accepted floor, below-floor evidence, layer/print reset and adaptive compact search window | Qt, geometry matching, rendering |
+| `GCodeIndexService.py` | Index lifecycle, bounded worker execution, `IndexView`, and the shared live-motion observation service | Networking or UI |
+| `PlateSplitTracker.py` | Pure shared live-motion boundary policy: accepted floor, below-floor evidence, layer/print reset and adaptive compact search window | Qt, geometry matching, rendering |
 | `LoadStateTracker.py` | The refresh-side load state: the pending flags and their age-out windows, the busy term, the monitor request's terminal conditions and the lease handoff | Snapshot semantics or Cura loading |
 | `GCodeIndex.py` | Parsing, motion matching, compact hydration and cache serialization algorithms | Application orchestration |
 | `FollowController.py` | Follow-mode decisions and state precedence | Preview writes or networking |
@@ -287,21 +287,32 @@ G-code byte percentage as time.
 Path smoothing is display-only: `PreviewMotion` animates the displayed path
 toward the newest physical observation using the pure `PreviewSmoothing`
 policy: the head cruises at the estimated physical velocity, never exceeds
-the newest observation and never decreases within a layer. The target itself
+the newest observation and never decreases during ordinary smoothing. The target itself
 is reconstructed between consecutive observations by linear interpolation
 over the measured poll interval, and the velocity window scales with that
 interval, so the glide is continuous at any polling rate the poller actually
 delivers (beyond ~5 s between polls the target saturates at the newest
 observation until the next poll); the newest observation remains the hard
-ceiling. While a compact layer hydrates, the driver is reset so a stale
-animation cannot fight the follower's writes. The refinement itself now
-produces a smooth sub-segment observation (a widened search window plus a
-hold-on-ambiguity fallback that never inflates the monotonic floor once a
-refined value exists; the first observation of a layer seeds the floor from
-the parser-position estimate). Layer transitions are jumped, never animated.
-The physical `path_fraction` that ETA consumes is unchanged, and each
+ceiling. A missing shared observation resets the driver so stale animation
+cannot fight the next physical position. Layer transitions and an authoritative
+backwards correction jump immediately, discarding the old ramp and velocity.
+The physical `path_fraction` that ETA consumes comes from the shared boundary, and each
 animated write re-remembers the plugin-written position so the override
 detector cannot mistake the animation for a manual grab.
+
+`GCodeIndexService.observe_motion()` owns live matching, independently of
+prepared canvas availability. `PrintCoordinator` resolves the physical layer,
+G-code-space toolhead position, attributed byte offset, pause state and extrusion
+evidence once from a telemetry frame, calls the service once, and publishes its
+immutable `MotionProgress` in `PrintSnapshot.motion_progress`. Monitor's live
+payload uses that same split without matching again; Preview converts its
+fraction to Cura's path units without another matcher or monotonic floor.
+Both therefore share layer-entry suppression, pause/resume handling, ambiguity
+holds and evidence-based backwards recovery. `IndexView.fraction()` remains a
+stateless query, not a live tracking API. Manual Monitor scrubbing is separate
+and cannot change the live floor; detaching either view does not stop tracking.
+Hydrated motion arrays work before a renderer's geometry is ready, and a
+compact layer may use the prepared geometry fallback while requesting its arrays.
 
 Compact-layer refinement rejects segment motion ranges outside the search window
 and edges whose bounding boxes cannot improve or tie the current nearest match.
