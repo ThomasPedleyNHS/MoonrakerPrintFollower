@@ -381,7 +381,30 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
             for model in models:
                 for expanded in (True, False, True):
                     section.setProperty("printerModel", dict(model, sectionExpandedMap={section_id: expanded}))
-                    self._pump_ms(35)
+                    # A visibility change queues a polish pass. Pumping for
+                    # 35 ms left the old download row in macOS's grid height
+                    # even though the model was already idle. Measure drawn,
+                    # stable geometry before recording or comparing heights.
+                    previous = None
+                    stable = 0
+                    def section_ready(image, section=section):
+                        nonlocal previous, stable
+                        # Only layout participants: progress-bar ink animates
+                        # continuously inside these rows and is not a size cue.
+                        items = [section, *section.childItems()]
+                        for child in section.childItems():
+                            items.extend(child.childItems())
+                        grid = section.findChild(harness.QQuickItem, "jobTelemetryGrid")
+                        if grid is not None:
+                            items.extend(grid.childItems())
+                        geometry = tuple((item.x(), item.y(), item.width(), item.height(),
+                                          item.isVisible()) for item in items)
+                        stable = stable + 1 if geometry == previous else 0
+                        previous = geometry
+                        return not image.isNull() and stable >= 2
+                    frame = self._wait_until(window, section_ready, timeout=3.0)
+                    self.assertFalse(frame.isNull(), "section never rendered")
+                    self.assertGreaterEqual(stable, 2, "section geometry never settled")
                     self.assertAlmostEqual(header.width(), width, delta=.5)
                     if not expanded:
                         self.assertAlmostEqual(section.height(), header.height(), delta=.5)
