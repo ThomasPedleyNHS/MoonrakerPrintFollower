@@ -3033,7 +3033,28 @@ class PlateCanvasHitTests(RealEngineTestCase):
         canvas = face.findChild(QQuickItem, "moonrakerPlateCanvas")
         self.assertIsNotNone(canvas, "the picker canvas never built")
         self.assertIsNotNone(canvas.property("_plot"), "the bed mapping never built")
+        self._settle_picker_geometry(window, face, canvas)
         return window, face, canvas
+
+    def _settle_picker_geometry(self, window, face, canvas):
+        # processEvents alone does not guarantee a Qt Quick polish/render
+        # pass. Linux CI once aimed using a 393 px face, then delivered the
+        # event after the popover's wrapped footer shrank it to 337 px.
+        # Establish the drawn mapping before deriving any pointer target.
+        previous = None
+        stable = 0
+        def settled(image):
+            nonlocal previous, stable
+            origin = canvas.mapToScene(QPointF())
+            geometry = (face.width(), face.height(), canvas.width(), canvas.height(),
+                        origin.x(), origin.y(), *self._scene(canvas, 0, 0),
+                        *self._scene(canvas, 250, 250))
+            stable = stable + 1 if geometry == previous else 0
+            previous = geometry
+            return not image.isNull() and canvas.width() > 0 and canvas.height() > 0 and stable >= 2
+        frame = self._wait_until(window, settled, timeout=3.0)
+        self.assertFalse(frame.isNull(), "the picker never rendered a frame")
+        self.assertGreaterEqual(stable, 2, "picker geometry never settled: %r" % (previous,))
 
     @staticmethod
     def _scene(canvas, bed_x, bed_y):
@@ -3051,7 +3072,9 @@ class PlateCanvasHitTests(RealEngineTestCase):
         """Put the pointer on the bed point through the real mouse path
         and return the name the face published for the hover."""
         from PyQt6.QtTest import QTest
+        self._settle_picker_geometry(window, face, canvas)
         scene_x, scene_y = self._scene(canvas, bed_x, bed_y)
+        target_size = (canvas.width(), canvas.height())
         # The face publishes on a POSITION CHANGE: a move onto the
         # point the pointer already holds is no hover at all. The
         # pointer outlives the window (see _park_pointer), so a test
@@ -3130,10 +3153,13 @@ class PlateCanvasHitTests(RealEngineTestCase):
         # the last off-point move once appeared as the selected neighbour.
         self._last_hover_evidence = {
             "bed": (bed_x, bed_y), "target": (scene_x, scene_y),
+            "target_canvas": target_size,
             "moves": delivery.moves, "canvas": (canvas.width(), canvas.height()),
             "origin": (canvas.mapToScene(QPointF()).x(), canvas.mapToScene(QPointF()).y()),
             "hovered": result,
         }
+        self.assertEqual(target_size, (canvas.width(), canvas.height()), self._last_hover_evidence)
+        self.assertEqual((scene_x, scene_y), self._scene(canvas, bed_x, bed_y), self._last_hover_evidence)
         return result
 
     def _click_bed(self, window, canvas, face, bed_x, bed_y):
