@@ -2785,6 +2785,7 @@ Item {
         // live request — its click opens the pop-over instead).
         enabled: !root.compact
         acceptedButtons: Qt.LeftButton
+        cursorShape: root.viewScale > 1.0 ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor
         onWheel: function (wheel) {
             if (mapping._plot == null) {
                 return;
@@ -2831,6 +2832,18 @@ Item {
             // the deltas from here on ride the glide.
             root._panDragDeltaX = 0.0;
             root._panDragDeltaY = 0.0;
+            if (viewGesture.pressed) {
+                // The wheel made a new target camera while the drag
+                // still owns the pointer. Its old press pan belongs
+                // to the PRE-zoom camera; using it on the next move
+                // would jump back to that camera until the ease ends.
+                root._pressX = wheel.x;
+                root._pressY = wheel.y;
+                root._pressPanX = root.viewPanX;
+                root._pressPanY = root.viewPanY;
+                root._dragX = wheel.x;
+                root._dragY = wheel.y;
+            }
             zoomAnimator.restart();
         }
         onPressed: function (mouse) {
@@ -2855,7 +2868,7 @@ Item {
             }
         }
         onPositionChanged: function (mouse) {
-            if (!pressed || root.displayScale <= 1.0) {
+            if (!pressed || root.viewScale <= 1.0 || root.displayScale <= 1.0) {
                 return;
             }
             // The pan tracks the pointer directly: the display AND
@@ -2897,8 +2910,11 @@ Item {
             if (root._interactionActive || navigationData() === "") {
                 root.viewPanX = clamped.x;
                 root.viewPanY = clamped.y;
-                root.displayPanX = clamped.x;
-                root.displayPanY = clamped.y;
+                // During a wheel ease the display trails the target.
+                // Translate BOTH cameras by the applied drag instead
+                // of snapping the display straight to that target.
+                root.displayPanX += appliedX;
+                root.displayPanY += appliedY;
             }
             root._panDragDeltaX += appliedX;
             root._panDragDeltaY += appliedY;

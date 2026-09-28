@@ -560,23 +560,38 @@ class PlateFaceRenderTests(harness.PlateFaceRenderTests):
         held_cx = cx - 60
         held_cy = cy - 40
         mouse(QEvent.Type.MouseButtonPress, cx, cy, Qt.MouseButton.LeftButton)
+        mouse(QEvent.Type.MouseMove, held_cx, held_cy, Qt.MouseButton.LeftButton)
         wheel(held_cx, held_cy, 120)
         self.assertGreater(face.property("viewScale"), before_wheel,
                            "the wheel was inert while the drag was held")
-        bed_x0 = ((held_cx - face.property("displayPanX"))
+        display_before_move = face.property("displayPanX")
+        target_before_move = face.property("viewPanX")
+        mouse(QEvent.Type.MouseMove, held_cx + 25, held_cy + 10,
+              Qt.MouseButton.LeftButton)
+        self.assertAlmostEqual(face.property("displayPanX"),
+                               display_before_move + 25.0, delta=1.5,
+                               msg="the held drag snapped to the zoom target")
+        self.assertAlmostEqual(face.property("viewPanX"),
+                               target_before_move + 25.0, delta=1.5,
+                               msg="the held drag revived the pre-zoom pan")
+        bed_x0 = ((held_cx + 25 - face.property("displayPanX"))
                   / face.property("displayScale"))
         for _beat in range(20):  # the ease runs while the button stays down
             self._pump_ms(20)
-            bed_x = ((held_cx - face.property("displayPanX"))
+            bed_x = ((held_cx + 25 - face.property("displayPanX"))
                      / face.property("displayScale"))
             self.assertAlmostEqual(bed_x, bed_x0, delta=2.0,
                                    msg="the held wheel zoomed from the origin")
-        mouse(QEvent.Type.MouseButtonRelease, cx, cy, Qt.MouseButton.NoButton)
+        mouse(QEvent.Type.MouseButtonRelease, held_cx + 25, held_cy + 10,
+              Qt.MouseButton.NoButton)
         deadline = harness.time.monotonic() + 3.0
         while harness.time.monotonic() < deadline and face.property("_interactionActive"):
             self._pump_ms(30)
         self.assertFalse(face.property("_interactionActive"),
                          "the held-wheel gesture never settled back")
+        self.assertAlmostEqual(face.property("displayPanX"),
+                               face.property("viewPanX"), delta=1.0,
+                               msg="the camera snapped after the held wheel settled")
         # Repeated drags: the display pan and the target pan stay in
         # lockstep at every boundary — a drag must never snap at its
         # start, and never snap back at its end.
