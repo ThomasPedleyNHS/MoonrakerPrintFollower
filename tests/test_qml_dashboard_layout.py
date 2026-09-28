@@ -280,6 +280,12 @@ class DynamicPaneStackTests(harness.RealEngineTestCase):
         for column in columns:
             sections = [child for child in column.childItems() if child.width() > 0]
             for section in sections:
+                # Section reordering temporarily removes the visual parent.
+                # Width must follow the pane, not dereference that null parent.
+                section.setParentItem(None)
+                self.pump(3)
+                self.assertAlmostEqual(section.width(), column.width(), delta=.5)
+                section.setParentItem(column)
                 section.setVisible(False)
                 self._pump_ms(20)
                 section.setVisible(True)
@@ -289,8 +295,18 @@ class DynamicPaneStackTests(harness.RealEngineTestCase):
             shown = sorted((child for child in sections if child.isVisible()), key=lambda child: child.y())
             for previous, following in zip(shown, shown[1:], strict=False):
                 self.assertGreaterEqual(following.y() + .5, previous.y() + previous.height())
+        from tests.harness.scenarios import CONTROLS_PROBE
+        def walk(item, depth=64):
+            yield item
+            if depth > 0:
+                for child in item.childItems():
+                    yield from walk(child, depth - 1)
+        scope = {"_lookup_windows": lambda: [window], "_walk": walk, "QPointF": harness.QPointF}
+        exec(CONTROLS_PROBE, scope)
+        self.assertTrue(scope["result"]["clear"], scope["result"])
         self.assertFalse([line for line in harness._APPLICATION["messages"][start:]
-                          if "polish loop" in line.lower() or "binding loop" in line.lower()])
+                          if "polish loop" in line.lower() or "binding loop" in line.lower()
+                          or "TypeError" in line])
 
 
 class FileManagerOpenBindingTests(harness.RealEngineTestCase):
@@ -359,6 +375,7 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
         window.show()
         header = section.childItems()[0]
         start = len(harness._APPLICATION["messages"])
+        idle_grid_heights = {}
         for width in (383, 240, 359, 399):
             section.setWidth(width)
             for model in models:
@@ -375,6 +392,20 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
                             self.assertAlmostEqual(section.height(), body.y() + body.height()
                                                    + section.property("verticalMargin"), delta=.5)
                             self.assertLessEqual(body.x() + body.width(), width)
+                            if section_id == "job":
+                                grid = self.find(section, "jobTelemetryGrid")
+                                if not model.get("improvingEta"):
+                                    baseline = idle_grid_heights.setdefault(tuple(sorted(model.items())), grid.height())
+                                    self.assertAlmostEqual(grid.height(), baseline, delta=.5,
+                                                           msg="available width must not wrap telemetry rows")
+                                from PyQt6.QtQml import QQmlExpression
+                                for label in grid.findChildren(harness.QQuickItem):
+                                    if label.metaObject().indexOfProperty("wrapMode") < 0:
+                                        continue
+                                    expression = QQmlExpression(harness.QQmlEngine.contextForObject(label),
+                                                                label, "Number(wrapMode)")
+                                    self.assertEqual(expression.evaluate()[0], 0,
+                                                     "telemetry cells must not inherit UM.Label wrapping")
                             if section_id == "job" and model.get("improvingEta"):
                                 phase = model["improveEtaPhase"]
                                 progress = model["improveEtaProgress"]
@@ -417,7 +448,12 @@ class SectionContentSizingTests(harness.RealEngineTestCase):
                        for phase, progress in (("Resolving", -1), ("Downloading", 0),
                                                ("Downloading", .09), ("Downloading", .99),
                                                ("Downloading", 1), ("Indexing", -1))]
-        self.check_section("JobSection.qml", "job", [base, *downloading,
+        paused = dict(base, monitorState="Paused", monitorEta="Paused", monitorElapsed="123:45:56",
+                      monitorFinish="Wednesday 23:59 + 12 days", monitorLayer="12345 / 50000",
+                      monitorSpeed="50000%", monitorFlow="50000%", filamentUsed="123456.78 m",
+                      filamentRemaining="999999.99 m", monitorAccelLimit="100000 mm/s²",
+                      monitorVelocity="12345.6 mm/s", monitorFlowRate="-12345.6 mm³/s")
+        self.check_section("JobSection.qml", "job", [base, *downloading, paused, base,
                            dict(base, printIndexReady=True, monitorLayer="2 / 100",
                            monitorLayerProgress=.3, monitorEta="00:10:00", monitorPositionX="10.0",
                            monitorPositionY="20.0", monitorPositionZ=".4")])

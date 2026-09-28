@@ -884,42 +884,42 @@ Component {
                         FileManagerSection {
                             id: fileManagerSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["fileManager"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
 
                         PrintSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["print"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             onCancelRequested: cancelPrintDialog.open()
                         }
 
                         SetupSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["setup"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
                         ToolheadSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["toolhead"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
 
                         MacrosSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["macros"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
                         ProfilesSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["profiles"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
                         TuningSection {
                             id: tuningSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["tuning"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             interactionSink: root.receiveSliderInteraction
                         }
@@ -927,7 +927,7 @@ Component {
                         FansSection {
                             id: fansSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["fans"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenFanItems
@@ -938,7 +938,7 @@ Component {
                         LedsSection {
                             id: ledsSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["leds"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenLedItems
@@ -949,7 +949,7 @@ Component {
                         PwmSection {
                             id: pwmSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["pwm"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             freezeRepeaters: root.tuningSliderPressed
                             frozenItems: root.frozenPwmOutputItems
@@ -960,7 +960,7 @@ Component {
                         PowerSection {
                             id: powerSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["power"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                             onPowerOffConfirmRequested: function (deviceName) {
                                 powerOffDialog.deviceName = deviceName;
@@ -971,13 +971,13 @@ Component {
                         SystemSection {
                             id: systemSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["system"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
                         SaveSection {
                             id: saveSection
                             visible: root.printer == null || root.printer.sectionHiddenMap["save"] !== true
-                            width: parent.width
+                            width: controlContent.width
                             printerModel: root.printer
                         }
                     }

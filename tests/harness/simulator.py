@@ -157,6 +157,7 @@ class PrinterState:
         # needs bytes arriving on the wire to animate its bar — a
         # pre-request hold delivers nothing and the bar never moves.
         self.gcode_stream_ms = 0
+        self.gcode_stream_hold = False
         # The missed-pause arm: the PAUSE gcode script is refused —
         # the controller must keep the entry, restyled.
         self.fail_pause_script = False
@@ -295,6 +296,8 @@ class PrinterState:
                 self.power_devices = list(value)
             elif name == "presets_value":
                 self.presets_value = dict(value)
+            elif name == "gcode_stream_hold":
+                self.gcode_stream_hold = bool(value)
             elif name == "gcode_stream_ms":
                 self.gcode_stream_ms = max(0, int(value))
             elif name == "gcode_fixture" and value == "penguin":
@@ -370,6 +373,7 @@ class PrinterState:
         self.power_devices = []
         self.presets_value = {}
         self.gcode_stream_ms = 0
+        self.gcode_stream_hold = False
         self.fail_pause_script = False
         self.corrupt_frame_once = False
         self.temp_tick_deg_c = 0.0
@@ -743,6 +747,15 @@ class StatusHandler(tornado.web.RequestHandler):
                 for start in range(0, len(self._printer.gcode_bytes), 256):
                     self.write(self._printer.gcode_bytes[start:start + 256])
                     await self.flush()
+                    if start == 0:
+                        # Keep a partial transfer alive until the harness has
+                        # observed the real loading UI. Capture/IPC latency
+                        # must not race a fixed-duration tiny download.
+                        deadline = time.monotonic() + 90
+                        while self._printer.gcode_stream_hold:
+                            if time.monotonic() >= deadline:
+                                raise RuntimeError("gcode stream hold was never released")
+                            await tornado.gen.sleep(0.05)
                     await tornado.gen.sleep(cadence / 1000.0)
             else:
                 self.write(self._printer.gcode_bytes)

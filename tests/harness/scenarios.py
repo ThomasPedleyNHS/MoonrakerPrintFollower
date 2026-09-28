@@ -99,7 +99,7 @@ CONTROLS_PROBE = (
     "        for item in _walk(flick, depth=64):\n"
     "            cls = item.metaObject().className()\n"
     "            c = item.mapToScene(QPointF(0, 0))\n"
-    "            if \"ColumnLayout\" in cls and abs(c.x() - f.x()) < 2 and abs(item.width() - target) < 24:\n"
+    "            if item.property(\"objectName\") == \"moonrakerControlsContent\" and abs(c.x() - f.x()) < 2 and abs(item.width() - target) < 24:\n"
     "                content = item\n"
     "                break\n"
     "        mx = 0\n"
@@ -2047,7 +2047,7 @@ SCENARIOS = [
                                     "virtual_sdcard": {"is_active": True, "progress": 0.5, "file_size": 1048576}}},
          {"op": "wait_model", "prop": "monitorFilename", "contains": "scenario1", "budget": 30},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCardOverlay", "budget": 30},
-         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120}},
+         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120, "gcode_stream_hold": True}},
          {"op": "emit_click", "text": "Load current print"},
          # The prompt is the card's own dialog: the button is on screen
          # and pressed, the same way the rename confirm is.
@@ -2070,6 +2070,7 @@ SCENARIOS = [
          {"op": "key_press", "key": "Return"},
          {"op": "wait_exec", "code": CARD_GATE_PROBE, "contains": '"loadBusy": true', "budget": 30},
          {"op": "wait_rect", "objectName": "loadIndicatorContent", "budget": 30, "poll": 0.2},
+         {"op": "sim_arm", "arms": {"gcode_stream_hold": False}},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCard", "budget": 240},
          {"op": "wait_rect", "objectName": "loadIndicatorContent", "absent": True, "budget": 60},
      ]},
@@ -2488,7 +2489,7 @@ SCENARIOS = [
      "steps": [
          {"op": "click_stage", "stage": "PreviewStage"},
          {"op": "sim_set_current_print"},
-         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120}},
+         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120, "gcode_stream_hold": True}},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCardOverlay", "budget": 30},
          {"op": "emit_click", "text": "Load current print"},
          # The prompt is the card's own dialog: the button is on screen
@@ -2497,6 +2498,7 @@ SCENARIOS = [
          {"op": "deliver_click", "objectName": "moonrakerReplaceConfirmButton"},
          {"op": "wait_exec", "code": P1_PCT_PROBE, "contains": '"pct": true', "budget": 20},
          {"op": "wait_rect", "objectName": "loadIndicatorContent", "budget": 30, "poll": 0.2},
+         {"op": "sim_arm", "arms": {"gcode_stream_hold": False}},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCard", "budget": 240},
          {"op": "assert_exec", "code": P1_RENDER_PROBE,
           "contains": '"render_ok": true'},
@@ -2661,7 +2663,7 @@ SCENARIOS = [
      "steps": [
          {"op": "click_stage", "stage": "PreviewStage"},
          {"op": "sim_set_current_print"},
-         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120}},
+         {"op": "sim_arm", "arms": {"gcode_stream_ms": 120, "gcode_stream_hold": True}},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCardOverlay", "budget": 30},
          # The load's own precondition: the plugin's activity gate reads
          # the OBSERVED print (a load request is dropped while the lane
@@ -2681,6 +2683,7 @@ SCENARIOS = [
          # indicator (h2's assertion).
          {"op": "wait_exec", "code": CARD_GATE_PROBE, "contains": '"loadBusy": true', "budget": 30},
          {"op": "wait_rect", "objectName": "loadIndicatorContent", "budget": 30, "poll": 0.2},
+         {"op": "sim_arm", "arms": {"gcode_stream_hold": False}},
          {"op": "wait_rect", "objectName": "moonrakerPreviewCard", "budget": 240},
          {"op": "wait_rect", "objectName": "loadIndicatorContent", "absent": True, "budget": 60},
          {"op": "wait_seconds", "seconds": 5},

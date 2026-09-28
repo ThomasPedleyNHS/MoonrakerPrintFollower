@@ -678,6 +678,12 @@ EXCLUSIONS = {
         "date": "2026-09-18",
         "recheck": "a scenario scrolls or presses inside the status pane",
     },
+    "jobTelemetryGrid": {
+        "reason": "passive geometry seam for the print-job telemetry layout, not an interactive surface",
+        "evidence": "test_qml_dashboard_layout.SectionContentSizingTests checks no-wrap labels and stable height across widths and telemetry states",
+        "date": "2026-09-28",
+        "recheck": "the telemetry grid gains an interactive action",
+    },
     "moonrakerStatusContent": {
         "reason": "geometry address point of the status column; no scenario presses it",
         "evidence": "test_qml_dashboard_layout's StatusColumnGeometryTests measures the sections against it",

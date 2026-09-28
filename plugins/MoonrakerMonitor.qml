@@ -2166,33 +2166,33 @@ Component {
                         spacing: 0
                         JobSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["job"] !== true
-                            width: parent.width
+                            width: statusContent.width
                             printerModel: root.printer
                         }
 
                         TempsSection {
-                            width: parent.width
+                            width: statusContent.width
                             visible: root.printer != null && root.printer.temperatureItems.length > 0 && root.printer.sectionHiddenMap["temps"] !== true
                             printerModel: root.printer
                         }
 
                         FansInfoSection {
-                            width: parent.width
+                            width: statusContent.width
                             visible: root.printer != null && root.printer.fanItems.length > 0 && root.printer.sectionHiddenMap["fansinfo"] !== true
                             printerModel: root.printer
                         }
                         FilamentSection {
-                            width: parent.width
+                            width: statusContent.width
                             visible: root.printer != null && root.printer.filamentSensorItems.length > 0 && root.printer.sectionHiddenMap["filament"] !== true
                             printerModel: root.printer
                         }
                         SystemInfoSection {
                             visible: root.printer == null || root.printer.sectionHiddenMap["systeminfo"] !== true
-                            width: parent.width
+                            width: statusContent.width
                             printerModel: root.printer
                         }
                         McusSection {
-                            width: parent.width
+                            width: statusContent.width
                             visible: root.printer != null && root.printer.mcuItems.length > 0 && root.printer.sectionHiddenMap["mcus"] !== true
                             printerModel: root.printer
                         }

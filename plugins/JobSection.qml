@@ -237,6 +237,10 @@ Item {
         }
 
         GridLayout {
+            objectName: "jobTelemetryGrid"
+            // UM.Label wraps by default. Every telemetry cell below uses
+            // NoWrap + elision so polling, pause/resume and long values do
+            // not feed width-dependent heights back into this grid.
             columns: 2
             columnSpacing: UM.Theme.getSize("default_margin").width
             rowSpacing: UM.Theme.getSize("default_margin").height / 2
@@ -251,6 +255,8 @@ Item {
             // before its first event; the value is
             // "—" until then.
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Last action"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
@@ -266,6 +272,8 @@ Item {
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Layer"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
@@ -277,6 +285,8 @@ Item {
                     Layout.fillWidth: true
                     spacing: UM.Theme.getSize("narrow_margin").width
                     UM.Label {
+                        wrapMode: Text.NoWrap
+                        elide: Text.ElideRight
                         text: root.printerModel != null ? root.printerModel.monitorLayer : "—"
                         Layout.fillWidth: true
                         // Which source produced the layer —
@@ -298,16 +308,22 @@ Item {
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Elapsed"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.monitorElapsed : "00:00:00"
                 Layout.fillWidth: true
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Remaining"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
@@ -316,6 +332,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: UM.Theme.getSize("narrow_margin").width
                 UM.Label {
+                    wrapMode: Text.NoWrap
                     text: root.printerModel != null ? root.printerModel.monitorEta : "—"
                     // The ETA colour shows its basis:
                     // normal text for the layer-timed
@@ -525,11 +542,15 @@ Item {
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Finish"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.monitorFinish : "—"
                 Layout.fillWidth: true
             }
@@ -538,11 +559,15 @@ Item {
             // countdown and deadline, under Finish. Keep its caption
             // visible and use an em-dash when no pause lies ahead.
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Next pause"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 // "(baked)" marks the gcode's own pauses (the live
                 // ruling) — the manual schedule reads plain.
                 text: root.printerModel != null && root.printerModel.nextPauseEta.length > 0 ? (root.printerModel.nextPauseEta + (root.printerModel.nextPauseBaked ? " (baked)" : "")) : "—"
@@ -557,25 +582,35 @@ Item {
             // the grid never shifts when a job
             // starts or finishes.
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Filament used"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.filamentUsed : "—"
                 Layout.fillWidth: true
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Filament remaining"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.filamentRemaining : "—"
                 Layout.fillWidth: true
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 // "Speed factor" (the 4.2.0
                 // ruling): the row is the M220
                 // multiplier, and the live speed
@@ -585,21 +620,29 @@ Item {
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.monitorSpeed : "100%"
                 Layout.fillWidth: true
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Flow"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: root.printerModel != null ? root.printerModel.monitorFlow : "100%"
                 Layout.fillWidth: true
             }
 
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Position"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
@@ -646,11 +689,14 @@ Item {
             // the printer reports no motion
             // object. The values must not wrap.
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Velocity"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
                 text: root.printerModel != null ? root.printerModel.monitorVelocity : "—"
                 color: UM.Theme.getColor("text")
                 Layout.fillWidth: true
@@ -670,11 +716,14 @@ Item {
                 }
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Flow rate"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
                 text: root.printerModel != null ? root.printerModel.monitorFlowRate : "—"
                 color: UM.Theme.getColor("text")
                 Layout.fillWidth: true
@@ -692,11 +741,14 @@ Item {
                 }
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Filament diameter"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
                 text: root.printerModel != null ? root.printerModel.monitorFlowDiameter : "—"
                 color: UM.Theme.getColor("text")
                 Layout.fillWidth: true
@@ -714,11 +766,14 @@ Item {
                 }
             }
             UM.Label {
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
                 text: "Accel limit"
                 color: UM.Theme.getColor("text_inactive")
                 Layout.preferredWidth: 110 * screenScaleFactor
             }
             UM.Label {
+                wrapMode: Text.NoWrap
                 text: root.printerModel != null ? root.printerModel.monitorAccelLimit : "—"
                 color: UM.Theme.getColor("text")
                 Layout.fillWidth: true
