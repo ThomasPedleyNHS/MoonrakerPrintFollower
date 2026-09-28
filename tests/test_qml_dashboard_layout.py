@@ -443,7 +443,16 @@ class PreviewLoadingSizeTests(harness.RealEngineTestCase):
                 indicator.setProperty("phase", phase)
                 indicator.setProperty("progress", progress)
                 indicator.setProperty("busy", busy)
-                self._pump_ms(30)
+                # Visibility and text changes schedule Qt Quick polish for
+                # the next frame. A fixed 30 ms sleep can inspect old child
+                # coordinates on a loaded macOS runner; observe a frame with
+                # the complete row contract instead, retaining the deadline.
+                def row_ready(_image, busy=busy, width=width):
+                    items = [item for item in content.childItems() if item.isVisible() and item.width() > 0]
+                    return (content.isVisible() == busy and abs(content.width() - width) <= .5
+                            and (not busy or (len(items) == 3 and items[1].width() > 30
+                                 and items[-1].x() + items[-1].width() <= width + .5)))
+                self._wait_until(window, row_ready, timeout=3.0)
                 self.assertAlmostEqual(indicator.height(), row_height, delta=.5)
                 self.assertEqual(content.isVisible(), busy)
                 self.assertAlmostEqual(content.width(), width, delta=.5)

@@ -120,6 +120,7 @@ Item {
             text: root.phase + (root.progress >= 0 ? " " + (root.progress * 100).toFixed(0) + "%" : "")
             color: UM.Theme.getColor("text_inactive")
             Layout.maximumWidth: 140 * screenScaleFactor
+            wrapMode: Text.NoWrap
             elide: Text.ElideRight
         }
     }
