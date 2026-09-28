@@ -1398,6 +1398,7 @@ SCENARIOS = [
      ]},
     {"id": "a6", "group": "connection", "name": "a 401 surfaces the key-rejection verdict",
      "expected_log_patterns": [r"MoonrakerHTTP (?:GET|POST) (?:core|monitor)::[a-z-]+ failed: unauthorized"],
+     "auth_fault_drain": True,
      "steps": [
          {"op": "sim_arm", "arms": {"require_api_key": True}},
          {"op": "sim_klippy"},
@@ -1421,6 +1422,7 @@ SCENARIOS = [
      ]},
     {"id": "a9", "group": "connection", "name": "disconnected disables every control",
      "expected_log_patterns": [r"MoonrakerHTTP (?:GET|POST) (?:core|monitor)::[a-z-]+ failed: unauthorized"],
+     "auth_fault_drain": True,
      "steps": [
          {"op": "sim_arm", "arms": {"refuse_subscribe": "down", "require_api_key": True}},
          {"op": "sim_klippy"},

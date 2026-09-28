@@ -18,6 +18,7 @@ import time
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import runner
 
@@ -1490,6 +1491,78 @@ class ScenarioSelectionTests(unittest.TestCase):
         self.assertEqual(selected[0]["group"], "status")
         self.assertGreater(len(runner.suite_specs("status")), 1)
         self.assertEqual(runner.suite_specs("not-a-scenario"), [])
+
+
+class AuthFaultDrainTests(unittest.TestCase):
+    def test_fault_scenarios_disarm_and_drain_before_their_log_windows_close(self):
+        for name in ("a6", "a9"):
+            spec, = runner.suite_specs(name)
+            self.assertTrue(spec["auth_fault_drain"])
+            self.assertTrue(spec["expected_log_patterns"])
+
+    def test_scenario_closes_log_window_after_draining_without_a_recovery_frame(self):
+        spec = {"id": "a6", "name": "injected 401", "auth_fault_drain": True,
+                "expected_log_patterns": [r"MoonrakerHTTP GET core::status failed: unauthorized"],
+                "steps": [{"op": "assert_model"}]}
+        ended = []
+        previous = list(runner.EXPECTED_LOG_WINDOWS)
+        runner.EXPECTED_LOG_WINDOWS[:] = []
+        try:
+            with patch.object(runner, "rpc", return_value={"ok": True, "size": [1840, 900]}), \
+                    patch.object(runner, "verified_geometry", return_value=True), \
+                    patch.object(runner, "frames_probe", return_value={}), \
+                    patch.object(runner, "liveness_outcome", return_value=[]), \
+                    patch.object(runner, "foreground_guard", return_value={"authority": "test"}), \
+                    patch.object(runner, "shot", return_value=(None, None)) as shot, \
+                    patch.object(runner, "drain_auth_fault",
+                                 side_effect=lambda: (ended.append(time.time()) or (True, "drained"))):
+                steps = runner.suite_scenario(spec, step_fn=lambda _step: (True, "401 shown", "shown"))
+            self.assertTrue(all(step[3] for step in steps))
+            self.assertEqual(steps[-1][0], "a6-zz-auth-drain")
+            self.assertEqual(shot.call_count, 1)
+            self.assertGreaterEqual(runner.EXPECTED_LOG_WINDOWS[0]["end"], ended[0])
+        finally:
+            runner.EXPECTED_LOG_WINDOWS[:] = previous
+
+    def test_failed_drain_cannot_excuse_late_warnings(self):
+        spec = {"id": "a6", "name": "injected 401", "auth_fault_drain": True,
+                "expected_log_patterns": [r"unauthorized"], "steps": []}
+        previous = list(runner.EXPECTED_LOG_WINDOWS)
+        runner.EXPECTED_LOG_WINDOWS[:] = []
+        try:
+            with patch.object(runner, "frames_probe", return_value={}), \
+                    patch.object(runner, "liveness_outcome", return_value=[]), \
+                    patch.object(runner, "drain_auth_fault", return_value=(False, "still pending")):
+                steps = runner.suite_scenario(spec)
+            self.assertFalse(steps[-1][3])
+            self.assertEqual(runner.EXPECTED_LOG_WINDOWS, [])
+        finally:
+            runner.EXPECTED_LOG_WINDOWS[:] = previous
+
+    def test_drain_waits_for_the_original_request_id_not_its_replacement(self):
+        replies = iter([
+            {"pending": [["core::status", 7], ["monitor::aux", 8]]},
+            {"pending": [["core::status", 7], ["monitor::aux", 8]]},
+            {"pending": [["core::status", 9], ["monitor::aux", 8]]},
+            {"pending": [["core::status", 9]]},
+        ])
+        with patch.object(runner, "sim_http", return_value={}) as sim, \
+                patch.object(runner, "exec_rpc", side_effect=lambda *a, **k: next(replies)), \
+                patch.object(runner.time, "sleep"):
+            ok, detail = runner.drain_auth_fault(budget_s=1)
+        self.assertTrue(ok)
+        self.assertIn("drained 2", detail)
+        sim.assert_called_once_with("/harness/scenario", "POST",
+                                    {"require_api_key": False, "refuse_subscribe": ""})
+
+    def test_drain_fails_closed_when_the_probe_or_disarm_is_unavailable(self):
+        with patch.object(runner, "sim_http", return_value={"unknown": ["require_api_key"]}):
+            ok, _ = runner.drain_auth_fault()
+            self.assertFalse(ok)
+        with patch.object(runner, "sim_http", return_value={}), \
+                patch.object(runner, "exec_rpc", return_value={"error": "extension missing"}):
+            with self.assertRaisesRegex(RuntimeError, "cannot inspect"):
+                runner.drain_auth_fault()
 
 
 if __name__ == "__main__":

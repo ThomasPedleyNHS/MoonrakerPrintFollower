@@ -1476,6 +1476,52 @@ def wait_for(check, budget_s, tick_s=2.0):
     return check()
 
 
+AUTH_PENDING_PROBE = """from UM.Application import Application
+result = {"error": "Moonraker Print Follower extension is unavailable"}
+for extension in Application.getInstance().getExtensions():
+    if "MoonrakerPrintFollower" in type(extension).__name__:
+        transport = extension._runtime.client.transport
+        result = {"pending": [[key, pending.request_id]
+                              for key, pending in transport._pending.items()
+                              if key.startswith(("core::", "monitor::"))]}
+        break
+"""
+
+
+def auth_pending_requests():
+    """Read request identities on Cura's GUI thread, where replies are logged."""
+    reply = exec_rpc(AUTH_PENDING_PROBE, raise_on_error=True)
+    if not isinstance(reply.get("pending"), list):
+        raise RuntimeError(f"cannot inspect Moonraker HTTP requests: {reply!r}")
+    return {tuple(item) for item in reply["pending"]}
+
+
+def drain_auth_fault(budget_s=10.0):
+    """Disarm a simulated 401 and retire requests issued under that arm.
+
+    The log window must stay open until Cura processes each reply: the
+    simulator finishing a request is earlier than Qt's reply callback and
+    its warning. Request IDs prevent later healthy polls on the same lane
+    from holding the window open indefinitely.
+    """
+    reply = sim_http("/harness/scenario", "POST",
+                     {"require_api_key": False, "refuse_subscribe": ""})
+    unknown = reply.get("unknown") or []
+    if unknown:
+        return False, f"simulator refused to disarm {unknown!r}"
+    issued = auth_pending_requests()
+    remaining = issued
+
+    def retired():
+        nonlocal remaining
+        remaining = issued & auth_pending_requests()
+        return not remaining
+
+    ok = bool(wait_for(retired, budget_s, 0.1))
+    return ok, (f"drained {len(issued)} in-flight request(s)" if ok else
+                f"timed out with {sorted(remaining)!r} still in flight")
+
+
 def boot_step(hello):
     """The boot record for every gallery: Cura's liveness, the driver
     plugin's registration in Cura's registry (a broken registration
@@ -3578,6 +3624,21 @@ def suite_scenario(spec, step_fn=None):
         EVIDENCE.append(_evidence_entry(spec, -4, {"op": "frames_probe"}, name,
                                         False, action, assertion, capture,
                                         time.monotonic()))
+    if spec.get("auth_fault_drain"):
+        # Leave the last visual witness in the fault state. Then turn
+        # off the injected 401 and wait for the requests that saw it to
+        # finish *on Cura's GUI thread* before closing the log window.
+        # A simulator reset alone does not drain Qt's queued replies.
+        name = f"{spec['id']}-zz-auth-drain"
+        started = time.monotonic()
+        try:
+            ok, detail = drain_auth_fault()
+        except Exception as exc:
+            ok, detail = False, f"auth fault teardown error: {exc!r}"
+        action = "the injected 401 was disarmed and its HTTP replies drained"
+        steps.append((name, action, detail, ok, None))
+        EVIDENCE.append(_evidence_entry(spec, -5, {"op": "auth_fault_drain"}, name,
+                                        ok, action, detail, None, started))
     EXPECTED_LOG_MESSAGES.extend(completed_fault_messages(spec, steps))
     if steps and all(step[3] for step in steps):
         EXPECTED_LOG_WINDOWS.extend({"pattern": pattern, "start": wall_started, "end": time.time()}
